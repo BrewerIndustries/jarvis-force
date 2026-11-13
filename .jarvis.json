@@ -1,0 +1,8 @@
+{
+  "id": "jarvis-force",
+  "name": "Jarvis Force",
+  "description": "Vertical shoot-'em-up: Jarvis runs a post-collapse air force (hangar, upgrades, mission planning) but can't fly, so you do. Rescue survivors, earn stars, upgrade the jet.",
+  "category": "games",
+  "tech": ["Vanilla JS", "Canvas 2D", "CSS", "localStorage"],
+  "status": { "prod": "in_progress", "dev": "in_progress" }
+}

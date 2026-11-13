@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#05080f">
+<title>Jarvis Force</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="stage">
+  <canvas id="game"></canvas>
+
+  <!-- MAIN MENU -->
+  <section id="menu" class="screen">
+    <div class="logo">
+      <div class="logo-top">J.A.R.V.I.S.</div>
+      <div class="logo-main">JARVIS<span>FORCE</span></div>
+      <div class="logo-sub">Post-Collapse Air Command</div>
+    </div>
+    <div class="starbank"><i class="star"></i><b id="menuStars">0</b></div>
+    <div class="menu-buttons">
+      <button class="btn big" data-go="map">Missions</button>
+      <button class="btn" data-go="hangar">Hangar</button>
+      <button class="btn" data-go="ach">Commendations</button>
+      <button class="btn ghost" data-go="howto">How to earn stars</button>
+      <button class="btn ghost" data-go="briefing">Replay intro</button>
+    </div>
+    <div class="jarvis-line" id="menuQuip"></div>
+  </section>
+
+  <!-- MISSION MAP -->
+  <section id="map" class="screen hidden">
+    <header class="bar"><button class="btn small" data-go="menu">‹ Back</button><h2>Mission Board</h2><div class="starbank small"><i class="star"></i><b class="starsNow">0</b></div></header>
+    <div class="diff" id="diffPick"></div>
+    <div class="scroll" id="mapList"></div>
+  </section>
+
+  <!-- HANGAR -->
+  <section id="hangar" class="screen hidden">
+    <header class="bar"><button class="btn small" data-go="menu">‹ Back</button><h2>Hangar</h2><div class="starbank small"><i class="star"></i><b class="starsNow">0</b></div></header>
+    <div class="jarvis-line" id="hangarQuip"></div>
+    <div class="scroll" id="upgList"></div>
+  </section>
+
+  <!-- ACHIEVEMENTS -->
+  <section id="ach" class="screen hidden">
+    <header class="bar"><button class="btn small" data-go="menu">‹ Back</button><h2>Commendations</h2><div class="starbank small"><i class="star"></i><b class="starsNow">0</b></div></header>
+    <div class="scroll" id="achList"></div>
+  </section>
+
+  <!-- HOW TO -->
+  <section id="howto" class="screen hidden">
+    <header class="bar"><button class="btn small" data-go="menu">‹ Back</button><h2>Earning Stars</h2><div></div></header>
+    <div class="scroll panel-text" id="howtoText"></div>
+  </section>
+
+  <!-- STORY / BRIEFING -->
+  <section id="story" class="screen hidden">
+    <div class="comms">
+      <div class="comms-head"><span class="dot"></span><span id="storyTitle">INCOMING TRANSMISSION</span></div>
+      <div class="comms-body" id="storyBody"></div>
+      <button class="btn big" id="storyNext">Continue</button>
+    </div>
+  </section>
+
+  <!-- RESULTS -->
+  <section id="results" class="screen hidden">
+    <div class="comms">
+      <div class="comms-head"><span class="dot"></span><span id="resTitle">MISSION COMPLETE</span></div>
+      <div id="resMedals" class="medals-row"></div>
+      <div id="resLines" class="res-lines"></div>
+      <div class="jarvis-line" id="resQuip"></div>
+      <div class="row">
+        <button class="btn" id="resRetry">Fly again</button>
+        <button class="btn" id="resHangar">Hangar</button>
+        <button class="btn big" id="resNext">Continue</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- PAUSE -->
+  <section id="pause" class="screen hidden dim">
+    <div class="comms">
+      <div class="comms-head"><span class="dot"></span><span>PAUSED</span></div>
+      <div class="jarvis-line" id="pauseInfo"></div>
+      <div class="row col">
+        <button class="btn big" id="pResume">Resume</button>
+        <button class="btn" id="pQuit">Abort mission (keep stars)</button>
+      </div>
+    </div>
+  </section>
+
+  <div id="toasts"></div>
+</div>
+<script src="game.js"></script>
+</body>
+</html>
