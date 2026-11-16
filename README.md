@@ -7,6 +7,14 @@ command of what's left of the air force. He builds the jets, runs the hangar and
 sortie, but he can't fly (eleven million simulations, eleven million lakes). You are the human pilot. Rescue
 survivors, bring stars home, and push through five sectors to the **Overseer Core**.
 
+## Live
+
+- Prod (`main`): https://jarvis-force.dabrewer.dev/
+- Dev (`dev`): https://jarvis-force.dabrewer.dev/dev/
+
+The site is on GitHub Pages via `.github/workflows/pages.yml`, which lives on `dev` and publishes `main` to `/` and `dev` to `/dev/`.
+A push to `dev` redeploys both. Promote to `main` with a PR.
+
 ## Run it
 
 Plain static files, no build step:
