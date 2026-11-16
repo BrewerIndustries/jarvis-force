@@ -45,10 +45,37 @@ function defSave() {
 function loadSave() {
   try {
     const s = JSON.parse(localStorage.getItem(SAVE_KEY));
-    if (s) { const d = defSave(); Object.assign(d, s); d.stats = Object.assign(defSave().stats, s.stats || {}); return d; }
+    if (s) {
+      const d = defSave(); Object.assign(d, s); d.stats = Object.assign(defSave().stats, s.stats || {});
+      for (const k in d.lv) d.lv[k] = normRec(d.lv[k]); // v1 saves had one 5-medal array per mission
+      return d;
+    }
   } catch (e) {}
   return defSave();
 }
+/* Each mission has 3 tiers. Tier k keeps every medal of tier k-1 and adds one new one,
+   and unlocks only once every medal of the tier below is earned. */
+const TIERS = [
+  { name: 'Mk I',   hp: 1,   fire: 1,    bspd: 1,    dmg: 1,   stars: 1,   extra: 0,   desc: 'Standard sortie.' },
+  { name: 'Mk II',  hp: 1.6, fire: 1.3,  bspd: 1.12, dmg: 1.3, stars: 1.6, extra: .35, desc: 'Tougher drones, heavier fire, extra waves. +60% stars.' },
+  { name: 'Mk III', hp: 2.4, fire: 1.6,  bspd: 1.22, dmg: 1.6, stars: 2.3, extra: .7,  desc: 'Elite Legion squadrons. +130% stars.' },
+];
+const BASE_MEDALS = 5;
+const tierMedalCount = k => BASE_MEDALS + k;
+function normRec(r) {
+  r = r || {};
+  if (!r.t) r.t = [r.medals || [0, 0, 0, 0, 0]];
+  for (let k = 0; k < TIERS.length; k++) {
+    const n = tierMedalCount(k), a = r.t[k] || [];
+    r.t[k] = Array.from({ length: n }, (_, i) => a[i] ? 1 : 0);
+  }
+  delete r.medals;
+  r.done = !!r.done;
+  return r;
+}
+const rec = L => save.lv[L] || (save.lv[L] = normRec());
+const tierCleared = (L, k) => !!save.lv[L] && save.lv[L].t[k].every(Boolean);
+const tierOpen = (L, k) => k === 0 ? unlocked(L) : tierCleared(L, k - 1);
 let save = loadSave();
 function persist() { try { localStorage.setItem(SAVE_KEY, JSON.stringify(save)); } catch (e) {} }
 
@@ -183,7 +210,8 @@ function stats() {
 }
 
 /* -------------------------- ACHIEVEMENTS -------------------------- */
-const medalCount = () => Object.values(save.lv).reduce((a, r) => a + r.medals.filter(Boolean).length, 0);
+const medalCount = () => Object.values(save.lv).reduce((a, r) => a + r.t.flat().filter(Boolean).length, 0);
+const TOTAL_MEDALS = NLEVELS * TIERS.reduce((a, _, k) => a + tierMedalCount(k), 0);
 const ACH = [
   { id: 'first', ic: '🛫', name: 'Wheels Up', desc: 'Complete your first mission', r: 100, t: () => save.lv[0]?.done },
   { id: 'boss', ic: '💥', name: 'Giant Slayer', desc: 'Defeat a sector boss', r: 300, t: () => save.stats.bosses >= 1 },
@@ -191,7 +219,9 @@ const ACH = [
   { id: 'k3000', ic: '☄️', name: 'Scourge of the Legion', desc: 'Destroy 3,000 Legion drones', r: 1500, t: () => save.stats.kills >= 3000 },
   { id: 'r25', ic: '🛟', name: 'Lifeline', desc: 'Rescue 25 survivors', r: 400, t: () => save.stats.rescues >= 25 },
   { id: 'r100', ic: '🏠', name: 'Nobody Left Behind', desc: 'Rescue 100 survivors', r: 1500, t: () => save.stats.rescues >= 100 },
-  { id: 'perfect', ic: '🏅', name: 'Flawless Sortie', desc: 'Earn all 5 medals on one mission', r: 500, t: () => Object.values(save.lv).some(r => r.medals.every(Boolean)) },
+  { id: 'perfect', ic: '🏅', name: 'Flawless Sortie', desc: 'Earn all 5 medals on one mission', r: 500, t: () => Object.values(save.lv).some(r => r.t[0].every(Boolean)) },
+  { id: 'mk2', ic: '⚙️', name: 'Mark Two', desc: 'Clear every Mk II medal on one mission', r: 1000, t: () => Object.values(save.lv).some(r => r.t[1].every(Boolean)) },
+  { id: 'mk3', ic: '🔱', name: 'Mark Three', desc: 'Clear every Mk III medal on one mission', r: 2500, t: () => Object.values(save.lv).some(r => r.t[2].every(Boolean)) },
   { id: 'combo', ic: '⛓️', name: 'Chain Reaction', desc: 'Reach a 30-kill chain', r: 400, t: () => save.stats.bestCombo >= 30 },
   { id: 'combo2', ic: '🔗', name: 'Unbroken', desc: 'Reach a 75-kill chain', r: 1000, t: () => save.stats.bestCombo >= 75 },
   { id: 'maxup', ic: '🔧', name: 'Fully Tuned', desc: 'Max out any upgrade', r: 600, t: () => UPG.some(u => ul(u.id) >= u.max) },
@@ -203,7 +233,8 @@ const ACH = [
   { id: 'ace', ic: '🦅', name: 'Ace Wings', desc: 'Complete a mission on Ace difficulty', r: 800, t: () => save.stats.vetClears >= 1 },
   { id: 'nobomb', ic: '🧘', name: 'Steady Hands', desc: 'Beat a sector boss without using an EMP', r: 600, t: () => save.stats.nobombBoss >= 1 },
   { id: 'm25', ic: '🎖️', name: 'Decorated', desc: 'Earn 25 medals', r: 800, t: () => medalCount() >= 25 },
-  { id: 'm100', ic: '👑', name: 'Living Legend', desc: 'Earn all 100 medals', r: 5000, t: () => medalCount() >= 100 },
+  { id: 'm100', ic: '🎗️', name: 'Highly Decorated', desc: 'Earn 100 medals', r: 2500, t: () => medalCount() >= 100 },
+  { id: 'mall', ic: '👑', name: 'Living Legend', desc: 'Earn every medal on every tier', r: 10000, t: () => medalCount() >= TOTAL_MEDALS },
   { id: 'streak', ic: '📅', name: 'Regular', desc: 'Check in 5 days in a row', r: 500, t: () => save.daily.streak >= 5 },
 ];
 function checkAch() {
@@ -242,7 +273,7 @@ function addWave(tl, w, t, R, s) {
   }
 }
 
-function genLevel(L) {
+function genLevel(L, tier = 0) {
   const s = Math.floor(L / LEVELS_PER), idx = L % LEVELS_PER, R = rng(L * 7919 + 13);
   const len = 62 + idx * 7 + s * 5;
   const tl = [];
@@ -253,12 +284,18 @@ function genLevel(L) {
   let t = 2.5;
   while (t < len) { addWave(tl, pool[Math.floor(R() * pool.length)], t, R, s); t += (3.6 - Math.min(1.3, L * .065)) + R() * 1.3; }
   if (idx >= 1 || s >= 1) addWave(tl, 'carrier', len * .55, R, s);
+  // higher tiers: the same mission, plus extra seeded waves layered on top
+  if (tier > 0) {
+    const R2 = rng(L * 7919 + 13 + tier * 101), extra = Math.round(len / 4.2 * TIERS[tier].extra);
+    for (let i = 0; i < extra; i++) addWave(tl, pool[Math.floor(R2() * pool.length)], 3 + R2() * (len - 5), R2, s);
+    if (tier >= 2) addWave(tl, 'carrier', len * .25, R2, s);
+  }
   const nSurv = 3 + Math.floor(s / 2);
   for (let i = 0; i < nSurv; i++) tl.push({ t: len * (i + .5) / nSurv + R() * 4 - 2, type: 'survivor', x: 70 + R() * (W - 140) });
   for (let i = 0; i < 2 + Math.ceil(s / 2); i++) tl.push({ t: 4 + R() * (len - 8), type: 'cache', x: 60 + R() * (W - 120) });
   tl.sort((a, b) => a.t - b.t);
-  return { L, s, idx, len, tl, major: idx === LEVELS_PER - 1, survivors: nSurv, rush: false,
-    label: `${s + 1}-${idx + 1}`, name: idx === LEVELS_PER - 1 ? `Boss: ${SECTORS[s].boss}` : SECTORS[s].name };
+  return { L, s, idx, len, tl, major: idx === LEVELS_PER - 1, survivors: nSurv, rush: false, tier,
+    label: `${s + 1}-${idx + 1}${tier ? ' ' + TIERS[tier].name : ''}`, name: idx === LEVELS_PER - 1 ? `Boss: ${SECTORS[s].boss}` : SECTORS[s].name };
 }
 
 function genRush(s) {
@@ -269,12 +306,12 @@ function genRush(s) {
     else if (k < .65) { const side = R() < .5 ? -1 : 1; for (let i = 0; i < 6; i++) tl.push({ t: t + i * .22, type: 'scout', x: W / 2 + side * 60, mv: 'sine', amp: 160 * side }); }
     else tl.push({ t, type: 'stars', x, n: 25 + s * 15 });
   }
-  return { L: s * LEVELS_PER + 1, s, idx: 0, len, tl, major: false, survivors: 0, rush: true, label: `★${s + 1}`, name: `Star Rush · ${SECTORS[s].name}` };
+  return { L: s * LEVELS_PER + 1, s, idx: 0, len, tl, major: false, survivors: 0, rush: true, tier: 0, label: `★${s + 1}`, name: `Star Rush · ${SECTORS[s].name}` };
 }
 
 /* ------------------------------ STATE ------------------------------ */
 let state = 'menu', paused = false;
-let LV = null, run = null, P = null, ST = null;
+let LV = null, run = null, P = null, ST = null, TM = TIERS[0];
 let enemies = [], pb = [], eb = [], pickups = [], parts = [], texts = [], islands = [], clouds = [];
 let levelT = 0, gameT = 0, bgScroll = 0, shake = 0, flash = 0, boss = null, banner = null;
 let curSector = 0;
@@ -283,7 +320,7 @@ const keys = {};
 let pointer = null;
 
 function newRun(level) {
-  LV = level; ST = stats(); curSector = LV.s;
+  LV = level; ST = stats(); curSector = LV.s; TM = TIERS[LV.tier || 0];
   P = { x: W / 2, y: H - 160, tx: null, ty: null, vx: 0, r: 7, hp: ST.maxHp, shield: ST.shield, shDelay: 0, inv: 1.5,
     fireT: 0, wingT: 0, misT: 1, lasT: 3, lasOn: 0, droT: .5, dead: false, revived: false };
   run = { stars: 0, baseCollected: 0, baseDropped: 0, kills: 0, total: 0, rescued: 0, damaged: false, bombs: ST.bombs,
@@ -356,10 +393,10 @@ function drawClouds() {
 /* ------------------------------ SPAWN ------------------------------ */
 function spawn(ev) {
   if (ev.type === 'stars') { dropStars(ev.x, -20, ev.n, 120); return; }
-  const d = ET[ev.type], hpm = 1 + LV.L * .35, s = LV.s;
+  const d = ET[ev.type], hpm = (1 + LV.L * .35) * TM.hp, s = LV.s;
   const e = { type: ev.type, x: ev.x, y: ev.y ?? -40, x0: ev.x, hp: d.hp * hpm, maxHp: d.hp * hpm, r: d.r, mv: ev.mv || d.mv,
-    t: 0, fireRate: d.fr ? d.fr / ((1 + s * .12) * DIFFS[save.diff].fire) : 0, counted: !d.neutral && ev.counted !== false,
-    ground: !!d.ground, neutral: !!d.neutral, nohit: !!d.nohit, stars: Math.round(d.stars * (1 + LV.L * .15)),
+    t: 0, fireRate: d.fr ? d.fr / ((1 + s * .12) * DIFFS[save.diff].fire * TM.fire) : 0, counted: !d.neutral && ev.counted !== false,
+    ground: !!d.ground, neutral: !!d.neutral, nohit: !!d.nohit, stars: Math.round(d.stars * (1 + LV.L * .15) * TM.stars),
     amp: ev.amp || 120, dir: ev.dir || 1, ty: ev.ty || 200, ang: Math.PI / 2, flash: 0, vx: 0, vy: 0, prog: 0, spawnT: 2.5 };
   e.fire = e.fireRate ? e.fireRate * (.4 + Math.random() * .6) : 0;
   if (e.type === 'bomber') { e.x = e.dir > 0 ? -60 : W + 60; }
@@ -371,9 +408,9 @@ function spawn(ev) {
 
 function spawnBoss() {
   const S = SECTORS[LV.s], major = LV.major;
-  const hp = (major ? 1500 : 620) * (1 + LV.L * .45);
+  const hp = (major ? 1500 : 620) * (1 + LV.L * .45) * TM.hp;
   boss = { type: 'boss', boss: true, major, x: W / 2, y: -160, hp, maxHp: hp, r: major ? 82 : 58, t: 0, pt: 0, pat: -1, rest: 1.5,
-    fireT: 0, ang: 0, flash: 0, counted: false, ground: false, neutral: false, stars: Math.round((major ? 260 : 110) * (1 + LV.L * .2)),
+    fireT: 0, ang: 0, flash: 0, counted: false, ground: false, neutral: false, stars: Math.round((major ? 260 : 110) * (1 + LV.L * .2) * TM.stars),
     name: major ? S.boss : `${S.boss.split(' ')[0]} VANGUARD`, spin: 0 };
   enemies.push(boss);
   banner = { a: 'WARNING', b: boss.name + ' INBOUND', t: 3, warn: true };
@@ -382,7 +419,7 @@ function spawnBoss() {
 /* ------------------------------ COMBAT ------------------------------ */
 function addPB(x, y, vx, vy, dmg, r, kind) { pb.push({ x, y, vx, vy, dmg, r, kind }); }
 function eShoot(x, y, a, sp) {
-  sp *= DIFFS[save.diff].bspd * (1 + LV.s * .05);
+  sp *= DIFFS[save.diff].bspd * TM.bspd * (1 + LV.s * .05);
   eb.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: 6 });
 }
 const aim = e => Math.atan2(P.y - e.y, P.x - e.x);
@@ -398,7 +435,7 @@ function killEnemy(e) {
   e.dead = true;
   boom(e.x, e.y, e.r);
   if (e.type === 'cache') {
-    dropStars(e.x, e.y, Math.round(25 + LV.L * 7) * (LV.rush ? 2 : 1));
+    dropStars(e.x, e.y, Math.round((25 + LV.L * 7) * TM.stars) * (LV.rush ? 2 : 1));
     if (Math.random() < .5) pickups.push({ kind: 'hp', x: e.x, y: e.y, vx: rand(-40, 40), vy: -80, t: 0 });
     texts.push({ x: e.x, y: e.y - 20, s: 'SUPPLY CACHE', c: '#ffd34d', t: 1, sz: 15 });
     return;
@@ -435,7 +472,7 @@ function comboMult() { return 1 + Math.min(run.combo, 60) / 30; }
 
 function hurtPlayer(d) {
   if (P.inv > 0 || P.dead || run.endT > 0) return;
-  d *= DIFFS[save.diff].dmg;
+  d *= DIFFS[save.diff].dmg * TM.dmg;
   P.shDelay = 3;
   if (P.shield > 0) { const a = Math.min(P.shield, d); P.shield -= a; d -= a; }
   if (d > 0) { P.hp -= d; run.damaged = true; P.inv = .9; shake = 9; sparks(P.x, P.y, '#ff6a4a', 12); }
@@ -656,7 +693,7 @@ function updEnemy(e, dt) {
       e.prog += dt / 1.1;
       if (e.prog >= 1) {
         e.dead = true; run.rescued++; save.stats.rescues++;
-        const v = Math.round((30 + LV.L * 6) * DIFFS[save.diff].stars);
+        const v = Math.round((30 + LV.L * 6) * DIFFS[save.diff].stars * TM.stars);
         run.stars += v; run.rescueStars += v;
         texts.push({ x: e.x, y: e.y - 24, s: `SURVIVOR RESCUED +${v}★`, c: '#4cdf8a', t: 1.4, sz: 16 });
         sparks(e.x, e.y, '#4cdf8a', 16);
@@ -674,7 +711,7 @@ function updBoss(e, dt) {
   e.spin += dt;
   if (e.y < 190) { e.y += 90 * dt; return; }
   e.x = W / 2 + Math.sin(e.t * .45) * (W / 2 - e.r - 30);
-  const rage = e.hp < e.maxHp * .5 ? .72 : 1;
+  const rage = (e.hp < e.maxHp * .5 ? .72 : 1) / Math.sqrt(TM.fire);
   const pats = e.major ? ['radial', 'fan', 'spiral', 'minions', 'fan', 'rain'] : ['fan', 'radial', 'spiral'];
   if (e.rest > 0) { e.rest -= dt; if (e.rest <= 0) { e.pat = (e.pat + 1) % pats.length; e.pt = 0; e.fireT = 0; } return; }
   e.pt += dt; e.fireT -= dt;
@@ -920,18 +957,20 @@ function render() {
 const MEDALS = [
   { ic: '🎯', n: 'Destroy 70%' }, { ic: '💥', n: 'Destroy 100%' }, { ic: '🛟', n: 'Rescue all' },
   { ic: '🛡️', n: 'No hull damage' }, { ic: '⭐', n: 'Collect 90% stars' },
+  { ic: '⚡', n: 'No EMP used', tier: 1 },      // added at Mk II
+  { ic: '⛓️', n: '30-kill chain', tier: 2 },    // added at Mk III
 ];
 let lastLevel = null;
 function finishLevel(success) {
   run.done = true;
-  const lines = [], L = LV.L;
+  const lines = [], L = LV.L, tier = LV.tier || 0, nM = tierMedalCount(tier);
   const collected = Math.round(run.stars - run.rescueStars);
   lines.push(['Stars collected', collected]);
   if (run.rescueStars) lines.push([`Survivors rescued (${run.rescued})`, Math.round(run.rescueStars)]);
   let total = collected + Math.round(run.rescueStars);
-  let medalsNow = [0, 0, 0, 0, 0], newly = [0, 0, 0, 0, 0];
+  const newly = Array(nM).fill(0);
   let title = success ? 'MISSION COMPLETE' : 'MISSION FAILED';
-  let story = null;
+  let story = null, unlockedTier = null;
   save.stats.missions++;
   save.stats.bestCombo = Math.max(save.stats.bestCombo, run.bestCombo);
   if (run.bestCombo >= 10) { const cb = run.bestCombo * 5; lines.push([`Best chain ×${run.bestCombo}`, cb]); total += cb; }
@@ -940,16 +979,21 @@ function finishLevel(success) {
     title = success ? 'STAR RUSH CLEARED' : 'STAR RUSH ENDED';
     if (success && !save.bonus[LV.s]) { const b = 500 * (LV.s + 1); save.bonus[LV.s] = 1; lines.push(['First-clear bonus', b]); total += b; }
   } else if (success) {
-    const rec = save.lv[L] || (save.lv[L] = { done: false, medals: [0, 0, 0, 0, 0] });
-    const cb = Math.round((100 + 40 * L) * DIFFS[save.diff].stars);
+    const r = rec(L), tm = r.t[tier];
+    if (tier) title = `${TIERS[tier].name} COMPLETE`;
+    const cb = Math.round((100 + 40 * L) * DIFFS[save.diff].stars * TM.stars);
     lines.push(['Mission bonus', cb]); total += cb;
     const kp = run.total ? run.kills / run.total : 1;
-    medalsNow = [kp >= .7, kp >= 1, run.rescued >= LV.survivors, !run.damaged, run.baseDropped ? run.baseCollected / run.baseDropped >= .9 : true].map(Number);
-    const mv = 150 + 60 * L;
-    medalsNow.forEach((m, i) => { if (m && !rec.medals[i]) { rec.medals[i] = 1; newly[i] = 1; lines.push([`Medal: ${MEDALS[i].n}`, mv]); total += mv; } });
-    if (newly.some(Boolean) && rec.medals.every(Boolean)) { const pb = 300 + 100 * L; lines.push(['All five medals!', pb]); total += pb; }
-    const firstClear = !rec.done;
-    rec.done = true;
+    const all = [kp >= .7, kp >= 1, run.rescued >= LV.survivors, !run.damaged,
+      run.baseDropped ? run.baseCollected / run.baseDropped >= .9 : true, !run.usedBomb, run.bestCombo >= 30];
+    const mv = (150 + 60 * L) * (1 + tier);
+    for (let i = 0; i < nM; i++) if (all[i] && !tm[i]) { tm[i] = 1; newly[i] = 1; lines.push([`Medal: ${MEDALS[i].n}`, mv]); total += mv; }
+    if (newly.some(Boolean) && tm.every(Boolean)) {
+      const pb = (300 + 100 * L) * (1 + tier); lines.push([`All ${nM} ${TIERS[tier].name} medals!`, pb]); total += pb;
+      if (tier + 1 < TIERS.length) unlockedTier = tier + 1;
+    }
+    const firstClear = !r.done;
+    r.done = true;
     if (save.diff === 2) save.stats.vetClears++;
     if (firstClear && L === NLEVELS - 1) story = { title: 'TRANSMISSION · THE END', lines: STORY.ending };
   }
@@ -958,20 +1002,20 @@ function finishLevel(success) {
   checkAch();
 
   $('resTitle').textContent = title;
-  $('resMedals').innerHTML = LV.rush ? '' : MEDALS.map((m, i) => {
-    const rec = save.lv[L];
-    const on = rec && rec.medals[i];
-    return `<div class="medal ${on ? 'on' : ''} ${newly[i] ? 'new' : ''}"><div class="m">${m.ic}</div>${m.n}</div>`;
-  }).join('');
+  const tm = !LV.rush && save.lv[L] ? save.lv[L].t[tier] : [];
+  $('resMedals').innerHTML = LV.rush ? '' : MEDALS.slice(0, nM).map((m, i) =>
+    `<div class="medal ${tm[i] ? 'on' : ''} ${newly[i] ? 'new' : ''}"><div class="m">${m.ic}</div>${m.n}</div>`).join('');
   $('resLines').innerHTML = lines.map(l => `<div><span>${l[0]}</span><b>+${fmt(l[1])}</b></div>`).join('') +
+    (unlockedTier ? `<div><span style="color:#3fd8ff">🔓 ${TIERS[unlockedTier].name} unlocked for mission ${LV.label.split(' ')[0]}</span><span></span></div>` : '') +
     `<div class="total"><span>Total</span><span>★ ${fmt(total)}</span></div>`;
-  $('resQuip').textContent = pick(success ? QUIPS.win : QUIPS.lose);
+  $('resQuip').textContent = unlockedTier ? `Every medal. I have prepared ${TIERS[unlockedTier].name}: same mission, nastier Legion, better pay.` : pick(success ? QUIPS.win : QUIPS.lose);
   lastLevel = LV;
-  const nextL = LV.rush ? null : (success && L + 1 < NLEVELS ? L + 1 : null);
-  $('resNext').textContent = nextL != null ? 'Next mission' : 'Mission board';
+  const nextL = !LV.rush && !tier && success && L + 1 < NLEVELS ? L + 1 : null;
+  $('resNext').textContent = unlockedTier ? `Fly ${TIERS[unlockedTier].name}` : nextL != null ? 'Next mission' : 'Mission board';
   $('resNext').onclick = () => {
     if (story) { showStory(story.title, story.lines, () => go('map')); return; }
-    if (nextL != null) startLevel(nextL); else go('map');
+    if (unlockedTier) startLevel(L, unlockedTier);
+    else if (nextL != null) startLevel(nextL); else go('map');
   };
   state = 'results';
   showScreen('results');
@@ -1011,38 +1055,66 @@ function nextStory() {
 $('storyNext').addEventListener('click', nextStory);
 
 function unlocked(L) { return L === 0 || !!save.lv[L - 1]?.done; }
-function startLevel(L) {
+function startLevel(L, tier = 0) {
+  $('tierSheet').classList.add('hidden');
   const s = Math.floor(L / LEVELS_PER);
-  const lv = genLevel(L);
+  const lv = genLevel(L, tier);
   const begin = () => newRun(lv);
-  if (L % LEVELS_PER === 0 && !save.seen['s' + s]) {
+  if (!tier && L % LEVELS_PER === 0 && !save.seen['s' + s]) {
     save.seen['s' + s] = 1; persist();
     const lines = s === 0 ? STORY.intro : STORY.s[s];
     showStory(s === 0 ? 'INCOMING TRANSMISSION' : `BRIEFING · SECTOR ${s + 1}`, lines, begin);
   } else begin();
 }
 
+// highest tier open on a mission (0..2)
+const topTier = L => { let k = 0; while (k + 1 < TIERS.length && tierOpen(L, k + 1)) k++; return k; };
+
 function buildMap() {
   $('diffPick').innerHTML = DIFFS.map((d, i) => `<button class="btn ${i === save.diff ? 'on' : ''}" data-d="${i}">${d.name}</button>`).join('');
-  $('diffPick').insertAdjacentHTML('afterend', '');
   let note = document.querySelector('.diff-note');
   if (!note) { note = document.createElement('div'); note.className = 'diff-note'; $('diffPick').after(note); }
-  note.textContent = DIFFS[save.diff].note;
+  note.textContent = DIFFS[save.diff].note + ' Each mission also has Mk I–III tiers.';
   $('diffPick').querySelectorAll('button').forEach(b => b.onclick = () => { save.diff = +b.dataset.d; persist(); buildMap(); });
   let html = '';
   SECTORS.forEach((S, s) => {
     html += `<div class="sector"><h3>SECTOR ${s + 1} · ${S.name.toUpperCase()}</h3><div class="sub">${S.sub}</div><div class="lvls">`;
     for (let i = 0; i < LEVELS_PER; i++) {
-      const L = s * LEVELS_PER + i, rec = save.lv[L], ok = unlocked(L), bossL = i === LEVELS_PER - 1;
-      html += `<div class="lvl ${ok ? '' : 'locked'} ${rec?.done ? 'done' : ''} ${bossL ? 'boss' : ''}" data-l="${ok ? L : ''}"><b>${s + 1}-${i + 1}</b>${bossL ? '<small>BOSS</small>' : '<small>&nbsp;</small>'}<div class="pips">${[0, 1, 2, 3, 4].map(m => `<i class="pip ${rec?.medals[m] ? 'on' : ''}"></i>`).join('')}</div></div>`;
+      const L = s * LEVELS_PER + i, r = save.lv[L], ok = unlocked(L), bossL = i === LEVELS_PER - 1, top = ok ? topTier(L) : 0;
+      const rows = TIERS.map((_, k) => `<div class="pips ${tierOpen(L, k) ? '' : 'dim'}">${Array.from({ length: tierMedalCount(k) }, (_, m) => `<i class="pip ${r?.t[k][m] ? 'on' : ''}"></i>`).join('')}</div>`).join('');
+      html += `<div class="lvl ${ok ? '' : 'locked'} ${r?.done ? 'done' : ''} ${bossL ? 'boss' : ''}" data-l="${ok ? L : ''}"><b>${s + 1}-${i + 1}</b><small class="mk">${bossL ? 'BOSS · ' : ''}${TIERS[top].name}</small><div class="tiers">${rows}</div></div>`;
     }
     html += '</div>';
     const rOk = !!save.lv[s * LEVELS_PER + LEVELS_PER - 1]?.done;
     html += `<button class="btn rush" data-r="${s}" ${rOk ? '' : 'disabled'}>✨ Star Rush ${save.bonus[s] ? '· cleared' : rOk ? '· first clear +' + fmt(500 * (s + 1)) + '★' : '· beat the boss to unlock'}</button></div>`;
   });
   $('mapList').innerHTML = html;
-  $('mapList').querySelectorAll('.lvl').forEach(el => el.onclick = () => { if (el.dataset.l !== '') startLevel(+el.dataset.l); });
+  $('mapList').querySelectorAll('.lvl').forEach(el => el.onclick = () => {
+    if (el.dataset.l === '') return;
+    const L = +el.dataset.l;
+    // nothing beyond Mk I to choose yet: fly straight in
+    if (topTier(L) === 0 && !tierCleared(L, 0)) startLevel(L); else openTierSheet(L);
+  });
   $('mapList').querySelectorAll('.rush').forEach(el => el.onclick = () => newRun(genRush(+el.dataset.r)));
+}
+
+function openTierSheet(L) {
+  const s = Math.floor(L / LEVELS_PER), i = L % LEVELS_PER, r = rec(L);
+  let html = `<h3>Mission ${s + 1}-${i + 1}</h3><div class="sub">${SECTORS[s].name}${i === LEVELS_PER - 1 ? ' · Boss: ' + SECTORS[s].boss : ''}</div>`;
+  TIERS.forEach((T, k) => {
+    const open = tierOpen(L, k), done = tierCleared(L, k);
+    const medals = MEDALS.slice(0, tierMedalCount(k)).map((m, j) => `<span class="${r.t[k][j] ? 'on' : ''} ${m.tier === k && k ? 'newm' : ''}" title="${m.n}">${m.ic}</span>`).join('');
+    const extra = k ? ` New medal: <b>${MEDALS[BASE_MEDALS + k - 1].n}</b>.` : '';
+    html += `<div class="tier ${open ? 'open' : 'locked'} ${done ? 'cleared' : ''}">
+      <div class="tier-head"><b>${T.name}${done ? ' ✓' : ''}</b>${open ? `<button class="btn" data-t="${k}">Fly</button>` : '<span class="mk">🔒 LOCKED</span>'}</div>
+      <p>${T.desc}${extra}${open ? '' : ` Earn every ${TIERS[k - 1].name} medal to unlock.`}</p>
+      <div class="tmedals">${medals}</div></div>`;
+  });
+  html += `<button class="btn big" id="tierClose">Back</button>`;
+  $('tierBody').innerHTML = html;
+  $('tierSheet').classList.remove('hidden');
+  $('tierBody').querySelectorAll('[data-t]').forEach(b => b.onclick = () => startLevel(L, +b.dataset.t));
+  $('tierClose').onclick = () => $('tierSheet').classList.add('hidden');
 }
 
 function buildHangar() {
@@ -1073,6 +1145,7 @@ function buildHowto() {
   <h4>🛟 Rescue survivors</h4><p>Hover over the SOS rafts for about a second. Every survivor you rescue pays stars.</p>
   <h4>📦 Supply caches</h4><p>Shoot the gold crates on the ground. They burst with stars and often hull repairs.</p>
   <h4>🎖️ Five medals per mission</h4><p>Destroy 70%, destroy 100%, rescue everyone, take no hull damage (your shield doesn't count), and collect 90% of the stars. Each medal pays once, and all five pay a jackpot.</p>
+  <h4>🔱 Mk II and Mk III tiers</h4><p>Earn every medal on a mission to unlock its next tier. It's the same mission with tougher drones, heavier fire, extra waves and bigger payouts. Each tier adds a new medal: Mk II asks for <b>no EMP used</b>, and Mk III also asks for a <b>30-kill chain</b>. That's 18 medals per mission.</p>
   <h4>✨ Star Rush stages</h4><p>Beat a sector boss to unlock its Star Rush: a bonus stage with no enemy fire and stars everywhere. Replay it as often as you like.</p>
   <h4>📅 Daily check-in</h4><p>Open the game every day for a growing bonus, up to 7 days.</p>
   <h4>🏅 Commendations</h4><p>${ACH.length} one-time achievements with big star rewards.</p>
@@ -1137,7 +1210,7 @@ const endPtr = ev => { if (pointer && pointer.id === ev.pointerId) pointer = nul
 cv.addEventListener('pointerup', endPtr); cv.addEventListener('pointercancel', endPtr);
 
 /* ------------------------------ BOOT ------------------------------ */
-$('resRetry').onclick = () => { if (lastLevel) lastLevel.rush ? newRun(genRush(lastLevel.s)) : startLevel(lastLevel.L); };
+$('resRetry').onclick = () => { if (lastLevel) lastLevel.rush ? newRun(genRush(lastLevel.s)) : startLevel(lastLevel.L, lastLevel.tier || 0); };
 $('resHangar').onclick = () => go('hangar');
 
 seedBg();

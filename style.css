@@ -82,9 +82,31 @@ canvas{position:absolute;inset:0;width:540px;height:960px;display:block}
 @keyframes blink{50%{opacity:.2}}
 .comms-body{font-size:19px;line-height:1.5;min-height:250px;white-space:pre-line}
 .comms-body .who{font-family:Orbitron;font-size:12px;color:var(--cyan);letter-spacing:.1em}
-.comms .btn.big{width:100%;margin-top:16px}
-.row{display:flex;gap:8px;margin-top:16px}
-.row .btn{flex:1;font-size:13px;padding:12px 6px}
+.comms > .btn.big{width:100%;margin-top:16px}
+.row{display:flex;gap:8px;margin-top:16px;align-items:stretch}
+.row .btn,.row .btn.big{flex:1 1 0;margin:0;font-size:13px;padding:12px 6px}
+.row.col .btn.big{font-size:18px;padding:16px}
+/* tier picker */
+.sheet{position:absolute;inset:0;background:rgba(2,5,12,.78);display:flex;align-items:center;padding:22px;z-index:5}
+.sheet .comms{max-height:100%;overflow-y:auto}
+.sheet h3{margin:0 0 2px;font-family:Orbitron;font-size:20px}
+.sheet .sub{color:var(--mute);margin-bottom:12px}
+.tier{border:1px solid var(--line);border-radius:12px;padding:12px;margin-bottom:10px;background:#0a1828}
+.tier.open{border-color:var(--cyan2)}
+.tier.locked{opacity:.5}
+.tier.cleared{border-color:var(--gold)}
+.tier-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.tier-head b{font-family:Orbitron;font-size:16px;letter-spacing:.06em}
+.tier-head .btn{font-size:12px;padding:8px 14px}
+.tier p{margin:4px 0 8px;color:var(--mute);font-size:14px}
+.tmedals{display:flex;gap:6px;flex-wrap:wrap}
+.tmedals span{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;font-size:16px;background:#132238;border:2px solid #22395a;filter:grayscale(1);opacity:.45}
+.tmedals span.on{filter:none;opacity:1;border-color:var(--gold);background:#3a2c0b}
+.tmedals span.newm{border-style:dashed}
+.lvl .tiers{display:flex;flex-direction:column;gap:3px;margin-top:5px}
+.lvl .pips{margin-top:0}
+.lvl .pips.dim{opacity:.25}
+.mk{display:inline-block;font-size:10px;color:var(--gold);letter-spacing:.05em}
 .row.col{flex-direction:column}
 .medals-row{display:flex;justify-content:center;gap:10px;margin:4px 0 14px}
 .medal{width:72px;text-align:center;font-size:12px;color:var(--mute)}
