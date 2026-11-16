@@ -7,6 +7,14 @@ command of what's left of the air force. He builds the jets, runs the hangar and
 sortie, but he can't fly (eleven million simulations, eleven million lakes). You are the human pilot. Rescue
 survivors, bring stars home, and push through five sectors to the **Overseer Core**.
 
+## Live
+
+- Prod (`main`): https://jarvis-force.dabrewer.dev/
+- Dev (`dev`): https://jarvis-force.dabrewer.dev/dev/
+
+The site is on GitHub Pages via `.github/workflows/pages.yml`, which lives on `dev` and publishes `main` to `/` and `dev` to `/dev/`.
+A push to `dev` redeploys both. Promote to `main` with a PR.
+
 ## Run it
 
 Plain static files, no build step:
@@ -24,17 +32,39 @@ Space/B or the EMP button = EMP charge · P/Esc or the ⏸ button = pause. The s
 
 - **20 missions** across 5 sectors (Drowned Coast, Ash Wastes, Frozen Relay, Overgrown Sprawl, Overseer Core).
   Every mission ends with a boss: a "vanguard" mini-boss on missions 1–3 and a major sector boss on mission 4.
+- **3 tiers per mission (Mk I / Mk II / Mk III).** Earn every medal on a tier to unlock the next one. It's the same
+  mission (same seed) with extra seeded waves layered on, plus tougher drones, heavier and faster fire, and more damage
+  (`TIERS` in game.js), with bigger star and medal payouts. Each tier adds a medal: Mk II = *No EMP used*,
+  Mk III = *30-kill chain*. That's 5 + 6 + 7 = 18 medals per mission, 360 in all. The tier picker opens from the
+  mission board once a mission has anything past Mk I to show.
+- **Fleet of 8 ships.** Ember is the starter. The other 7 (Kestrel, Lifeline, Bulwark, Tempest, Aegis, Phantom, Sovereign)
+  are each assembled from 4 parts (Wings, Engine, Cockpit, Reactor) found in blue **salvage crates**. Each part lives on one
+  mission and tier (`PART_SPOTS`). Sectors 1–5 Mk I hold Kestrel → Aegis, Mk II holds Phantom and Mk III holds Sovereign.
+  Missions with a part still to find show 🔩. Every ship has trade-offs (`SHIPS[].mods`): hull, shield, speed, fire rate,
+  damage, rescue speed, magnet, star value, hitbox, recovery time, and a **First Strike barrier** that blocks one hit and
+  restores itself. Upgrades apply to every ship. Parts are saved the moment you pick them up.
+- **14 enemy types**, including the **Hive** (a carrier that launches drones until destroyed, and retreats when the boss
+  arrives), mines that arm near you and burst, snipers with a telegraphed aim line, splitters that break into
+  three, and patrolling ground tanks.
+- **Unique sector bosses** (`BOSSES`), each with its own silhouette and attack set:
+  - Tidebreaker (manta: walls with gaps)
+  - Cinder Colossus (flame cone, mine drops)
+  - Glacier Maw (splitting ice shards, telegraphed beam)
+  - Thornwarden (rotating cross, summons splitters)
+  - Overseer (3 phases, with a Hive at phase 2)
+
+  Each sector's vanguard mini-boss uses a subset of its boss's attacks.
 - **5 Star Rush bonus stages** (one per sector, unlocked by beating its boss). No enemy fire, stars everywhere.
 - **14 upgrades** in Jarvis's hangar: Pulse Cannon, Autoloader, Wing Guns, Seeker Missiles, Arc Lance (beam),
   Wingman Drones, Hull Plating, Deflector shield, Repair Nanites, EMP Charges, Star Magnet, Salvage Scanner
   (+star value), Targeting Core (crits), Ejection Protocol (one revive per mission).
 - **3 difficulties**: Cadet (default, gentle) / Pilot (+30% stars) / Ace (+70% stars).
-- **20 Commendations** (one-time star rewards) and a **daily check-in** streak.
+- **27 Commendations** (one-time star rewards) and a **daily check-in** streak.
 
 ### Ways to earn stars
 Drone kills · kill-chain multiplier (up to ×3, plus an end-of-mission chain bonus) · survivor rescues ·
 supply caches · mission-complete bonus · 5 medals per mission (70% kills, 100% kills, rescue all,
-no hull damage, 90% stars collected) + all-five jackpot · Star Rush stages (+first-clear bonus) ·
+no hull damage, 90% stars collected) + all-medals jackpot, then Mk II/III replays of every mission at higher pay · Star Rush stages (+first-clear bonus) ·
 commendations · daily check-in · difficulty and Salvage Scanner multipliers. Stars are kept even if you're shot down.
 
 ### Easier than the genre norm
@@ -55,3 +85,11 @@ an auto-revive upgrade, and the stars-kept-on-death rule.
 
 A non-dodging test bot clears 1-1 on base gear, and clears 2-4 / 3-4 / 4-4 / 5-4 with roughly 30% / 50% / 70% / 100%
 of upgrades bought. Maxing every upgrade costs about 88k stars, and first-time medals alone pay about 75k across the campaign.
+
+Save format: `save.lv[L] = { done, t: [[5 medals], [6], [7]] }`, one array per tier. Older single-array
+`medals` saves are migrated on load by `normRec()`.
+
+Tier balance (bot, 2026-11-15): Mk II 1-1 clears at about 30% upgrades, and Mk III 3-4 / 5-4 clear at full upgrades with
+about 1.5–2× the enemies and roughly 4× the stars of Mk I.
+
+Save adds `ships: { <id>: [4 part flags] }` and `ship` (selected id). Part pickups write immediately via `collectPart()`.

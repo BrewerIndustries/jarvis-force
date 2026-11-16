@@ -3,6 +3,23 @@
   "name": "Jarvis Force",
   "description": "Vertical shoot-'em-up: Jarvis runs a post-collapse air force (hangar, upgrades, mission planning) but can't fly, so you do. Rescue survivors, earn stars, upgrade the jet.",
   "category": "games",
-  "tech": ["Vanilla JS", "Canvas 2D", "CSS", "localStorage"],
-  "status": { "prod": "in_progress", "dev": "in_progress" }
+  "tech": [
+    "Vanilla JS",
+    "Canvas 2D",
+    "CSS",
+    "localStorage",
+    "GitHub Pages"
+  ],
+  "status": {
+    "prod": "in_progress",
+    "dev": "live"
+  },
+  "deploy": {
+    "prod": {
+      "url": "https://jarvis-force.dabrewer.dev/"
+    },
+    "dev": {
+      "url": "https://jarvis-force.dabrewer.dev/dev/"
+    }
+  }
 }
