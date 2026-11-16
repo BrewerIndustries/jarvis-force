@@ -30,7 +30,15 @@ Space/B or the EMP button = EMP charge · P/Esc or the ⏸ button = pause. The s
 
 ## Content
 
-- **20 missions** across 5 sectors (Drowned Coast, Ash Wastes, Frozen Relay, Overgrown Sprawl, Overseer Core).
+- **20 missions** across 5 sectors, each with its own terrain (`BIOMES` in game.js):
+  - Drowned Coast: islands, shallows and drowned tower blocks
+  - Ashen Peaks: faceted mountains, volcanoes and lava rivers
+  - Frozen Relay: a stormy sea with rolling swell, ice floes, icebergs and radio rigs
+  - Overgrown Sprawl: city blocks with overgrown rooftops
+  - Overseer Core: machine plating, conduits, data cylinders and vents
+
+  Wave height, volcano count and building height grow through each sector, and each mission in a sector has its own
+  light (dawn, day, dusk, night).
   Every mission ends with a boss: a "vanguard" mini-boss on missions 1–3 and a major sector boss on mission 4.
 - **3 tiers per mission (Mk I / Mk II / Mk III).** Earn every medal on a tier to unlock the next one. It's the same
   mission (same seed) with extra seeded waves layered on, plus tougher drones, heavier and faster fire, and more damage
@@ -55,9 +63,14 @@ Space/B or the EMP button = EMP charge · P/Esc or the ⏸ button = pause. The s
 
   Each sector's vanguard mini-boss uses a subset of its boss's attacks.
 - **5 Star Rush bonus stages** (one per sector, unlocked by beating its boss). No enemy fire, stars everywhere.
-- **14 upgrades** in Jarvis's hangar: Pulse Cannon, Autoloader, Wing Guns, Seeker Missiles, Arc Lance (beam),
+- **20 upgrades** in Jarvis's hangar: Pulse Cannon, Autoloader, Wing Guns, Seeker Missiles, Arc Lance (beam),
   Wingman Drones, Hull Plating, Deflector shield, Repair Nanites, EMP Charges, Star Magnet, Salvage Scanner
-  (+star value), Targeting Core (crits), Ejection Protocol (one revive per mission).
+  (+star value), Targeting Core (crits), Thrusters (speed), Reactive Armour (damage reduction), Flak Pods (shrapnel ring),
+  Tesla Coil (chain lightning), Overdrive (damage from kill chains), Rescue Winch, and Ejection Protocol (one revive per mission).
+- **The Legion adapts** (`threat()`). Each mission expects a share of the full loadout, set geometrically between a bare Ember
+  and a maxed jet. Firepower above that raises enemy HP (power ratio^0.6), and toughness above it raises enemy bullet damage
+  (^0.55). Gold-ringed **elite** drones (×1.9 HP, faster fire, ×2 stars) get more common by sector, by tier and when you're over-built.
+  A toast and the tier sheet show the threat multiplier when it's high.
 - **3 difficulties**: Cadet (default, gentle) / Pilot (+30% stars) / Ace (+70% stars).
 - **27 Commendations** (one-time star rewards) and a **daily check-in** streak.
 
@@ -70,6 +83,13 @@ commendations · daily check-in · difficulty and Salvage Scanner multipliers. S
 ### Easier than the genre norm
 Tiny hitbox, slower bullets, a recharging shield that blocks the "no damage" penalty, regen, health drops,
 an auto-revive upgrade, and the stars-kept-on-death rule.
+
+### Rendering
+Everything is procedural Canvas 2D with a pseudo-3D look:
+- Terrain prisms (`prism()`) lean away from the screen centre as they scroll past, and walls are shaded from a top-left light.
+- Shadows for terrain, jets and bosses are drawn into one black offscreen layer (`shadowPass()`) and composited once.
+- Ships and drones use gradient body shading.
+- Each biome adds weather (embers, snow, pollen or data motes), and the world sits under a vignette.
 
 ## Code layout
 
@@ -91,5 +111,9 @@ Save format: `save.lv[L] = { done, t: [[5 medals], [6], [7]] }`, one array per t
 
 Tier balance (bot, 2026-11-15): Mk II 1-1 clears at about 30% upgrades, and Mk III 3-4 / 5-4 clear at full upgrades with
 about 1.5–2× the enemies and roughly 4× the stars of Mk I.
+
+Hardening (bot, 2026-11-16): a maxed jet used to kill the 1-4 boss in about 6s without taking damage. It now takes about 16s
+and real damage. A 25% loadout still clears 5-4, and an un-upgraded Ember loses on 2-4. The boss sway clock now starts on
+arrival (it used to reuse the entry timer, so bosses snapped sideways when they arrived), and the boss's x eases toward its target.
 
 Save adds `ships: { <id>: [4 part flags] }` and `ship` (selected id). Part pickups write immediately via `collectPart()`.
