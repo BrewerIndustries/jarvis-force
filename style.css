@@ -124,3 +124,25 @@ canvas{position:absolute;inset:0;width:540px;height:960px;display:block}
   font-size:16px;max-width:460px;text-align:center;animation:tin .3s ease-out}
 .toast b{color:var(--gold)}
 @keyframes tin{from{transform:translateY(-12px);opacity:0}}
+/* fleet */
+.sect{font-family:Orbitron;font-size:14px;letter-spacing:.2em;color:var(--cyan);margin:6px 2px 10px}
+.sect small{font-family:Rajdhani;letter-spacing:0;color:var(--mute);font-size:13px;margin-left:6px}
+.ship{display:grid;grid-template-columns:72px 1fr auto;gap:10px;align-items:center;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:10px}
+.ship.sel{border-color:var(--gold);box-shadow:0 0 14px rgba(255,204,51,.25)}
+.ship img{width:72px;height:72px}
+.ship.locked img{filter:brightness(.15) saturate(0)}
+.ship h4{margin:0;font-family:Orbitron;font-size:15px}
+.ship h4 small{font-family:Rajdhani;color:var(--mute);font-size:13px;margin-left:8px;font-weight:600}
+.ship p{margin:2px 0 5px;color:var(--mute);font-size:13px}
+.ship .btn{min-width:74px}
+.mods{display:flex;flex-wrap:wrap;gap:4px}
+.mods span{font-size:12px;padding:1px 7px;border-radius:6px;background:#132238;color:var(--text)}
+.mods .up{color:var(--green)}
+.mods .down{color:var(--red)}
+.parts{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.parts span{font-size:12px;padding:1px 7px;border-radius:6px;border:1px dashed #2a4a6a;color:var(--mute)}
+.parts span.got{border-style:solid;border-color:var(--cyan2);color:var(--cyan)}
+.parts small{opacity:.7;margin-left:2px}
+.lvl{position:relative}
+.lvl .pd{position:absolute;top:3px;right:5px;font-size:12px;font-style:normal}
+.tier .salv{font-size:13px;color:var(--cyan);margin:8px 0 0}

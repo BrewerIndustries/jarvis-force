@@ -8,7 +8,7 @@
 const W = 540, H = 960;
 const stage = document.getElementById('stage');
 const cv = document.getElementById('game');
-const ctx = cv.getContext('2d');
+let ctx = cv.getContext('2d');
 let K = 1; // canvas backing scale
 
 function fit() {
@@ -38,9 +38,9 @@ function rng(seed) {
 /* ------------------------------ SAVE ------------------------------ */
 const SAVE_KEY = 'jarvisforce.save.v1';
 function defSave() {
-  return { stars: 0, total: 0, up: {}, lv: {}, bonus: {}, ach: {}, seen: {}, diff: 0,
+  return { stars: 0, total: 0, up: {}, lv: {}, bonus: {}, ach: {}, seen: {}, diff: 0, ships: {}, ship: 'ember',
     daily: { last: '', streak: 0 },
-    stats: { kills: 0, rescues: 0, bosses: 0, bestCombo: 0, vetClears: 0, nobombBoss: 0, missions: 0 } };
+    stats: { kills: 0, rescues: 0, bosses: 0, bestCombo: 0, vetClears: 0, nobombBoss: 0, missions: 0, hives: 0 } };
 }
 function loadSave() {
   try {
@@ -195,17 +195,73 @@ function lasInt(l) { return 9 - 0.7 * l; }
 function maxHp(l) { return 100 + 25 * l; }
 function magR(l) { return 70 + 35 * l; }
 
+/* ------------------------------ FLEET ------------------------------ */
+// Every ship but Ember is assembled from 4 parts found in salvage crates on specific missions.
+const SHIPS = [
+  { id: 'ember', name: 'Ember', role: 'All-rounder', desc: 'The first jet Jarvis built. Balanced in every way.',
+    col: ['#d7e3ef', '#9fb2c6', '#29b6f6'], shape: 'delta', mods: {} },
+  { id: 'kestrel', name: 'Kestrel', role: 'Interceptor', desc: 'Light, quick and a little twitchy.',
+    col: ['#e6f0d6', '#94a873', '#7fe05a'], shape: 'swept', mods: { speed: 1.15, fire: 1.1, hp: .9 } },
+  { id: 'lifeline', name: 'Lifeline', role: 'Rescue', desc: 'Built for pulling people out of trouble.',
+    col: ['#f4efe2', '#c9b48a', '#4cdf8a'], shape: 'wide', mods: { rescue: 2, magnet: 1.25, stars: 1.1, speed: .95 } },
+  { id: 'bulwark', name: 'Bulwark', role: 'Heavy', desc: 'Armoured like a bank vault. Turns like one too.',
+    col: ['#c9ccd4', '#7b8091', '#ffb347'], shape: 'heavy', mods: { hp: 1.25, shield: 30, speed: .9 } },
+  { id: 'tempest', name: 'Tempest', role: 'Gunship', desc: 'More guns than sense.',
+    col: ['#f0d8d8', '#b07a7a', '#ff5a4f'], shape: 'forward', mods: { fire: 1.2, dmg: 1.1, hp: .85 } },
+  { id: 'aegis', name: 'Aegis', role: 'Guardian', desc: 'Its First Strike barrier blocks a hit outright, then restores itself.',
+    col: ['#dfe6ff', '#8a97c9', '#9fb8ff'], shape: 'ring', mods: { hp: 1.1, barrier: 12 } },
+  { id: 'phantom', name: 'Phantom', role: 'Stealth', desc: 'Hard to see, harder to hit.',
+    col: ['#4a505e', '#2a2e37', '#b48cff'], shape: 'swept', mods: { speed: 1.2, hitbox: .75, inv: 1.5, dmg: .9 } },
+  { id: 'sovereign', name: 'Sovereign', role: 'Flagship', desc: "Jarvis's masterpiece. Better at everything. He still can't fly it.",
+    col: ['#fff6d8', '#c9a34a', '#ffcc33'], shape: 'heavy', mods: { hp: 1.15, fire: 1.15, dmg: 1.15, speed: 1.1, shield: 20, barrier: 20, stars: 1.1 } },
+];
+const PART_NAMES = ['Wings', 'Engine', 'Cockpit', 'Reactor'];
+// [mission index, tier] for each part, in PART_NAMES order
+const PART_SPOTS = {
+  kestrel:   [[0, 0], [1, 0], [2, 0], [3, 0]],
+  lifeline:  [[4, 0], [5, 0], [6, 0], [7, 0]],
+  bulwark:   [[8, 0], [9, 0], [10, 0], [11, 0]],
+  tempest:   [[12, 0], [13, 0], [14, 0], [15, 0]],
+  aegis:     [[16, 0], [17, 0], [18, 0], [19, 0]],
+  phantom:   [[1, 1], [5, 1], [9, 1], [13, 1]],
+  sovereign: [[3, 2], [7, 2], [11, 2], [19, 2]],
+};
+function partAt(L, tier) {
+  for (const id in PART_SPOTS) { const i = PART_SPOTS[id].findIndex(([l, t]) => l === L && t === tier); if (i >= 0) return { ship: id, idx: i }; }
+  return null;
+}
+const shipParts = id => save.ships[id] || (save.ships[id] = [0, 0, 0, 0]);
+const hasPart = (id, i) => !!(save.ships[id] && save.ships[id][i]);
+const shipOwned = id => id === 'ember' || (!!PART_SPOTS[id] && [0, 1, 2, 3].every(i => hasPart(id, i)));
+const shipById = id => SHIPS.find(x => x.id === id) || SHIPS[0];
+const spotLabel = ([L, t]) => `${Math.floor(L / LEVELS_PER) + 1}-${L % LEVELS_PER + 1}${t ? ' ' + TIERS[t].name : ''}`;
+const MOD_TXT = { hp: 'hull', speed: 'speed', fire: 'fire rate', dmg: 'damage', magnet: 'magnet range', stars: 'star value', inv: 'post-hit invulnerability' };
+function modList(m) {
+  const out = [];
+  for (const k in m) {
+    const v = m[k];
+    if (k === 'shield') out.push([`+${v} shield`, true]);
+    else if (k === 'barrier') out.push([`First Strike barrier (restores in ${v}s)`, true]);
+    else if (k === 'hitbox') out.push([`${Math.round((1 - v) * 100)}% smaller hitbox`, true]);
+    else if (k === 'rescue') out.push([`${v}× faster rescues`, true]);
+    else { const pc = Math.round((v - 1) * 100); out.push([`${pc > 0 ? '+' : ''}${pc}% ${MOD_TXT[k]}`, pc > 0]); }
+  }
+  return out;
+}
+
 function stats() {
-  const c = ul('cannon');
+  if (!shipOwned(save.ship)) save.ship = 'ember';
+  const c = ul('cannon'), m = shipById(save.ship).mods, g = k => m[k] ?? 1, dm = g('dmg');
   return {
-    dmg: 10 * (1 + .3 * c), streams: streams(c), fireInt: fireInt(ul('rate')),
-    wings: ul('wings'), wdmg: 6 * (1 + .3 * ul('wings')),
-    mis: ul('missiles'), mdmg: 22 * (1 + .35 * ul('missiles')), misInt: misInt(ul('missiles')),
-    las: ul('laser'), ldps: 70 * (1 + .4 * ul('laser')), lasInt: lasInt(ul('laser')),
-    drones: ul('drones'), ddmg: 7 * (1 + .25 * c),
-    maxHp: maxHp(ul('hull')), shield: ul('shield') * 22, regen: ul('regen') * 1.2,
-    bombs: 1 + ul('bomb'), mag: magR(ul('magnet')), fortune: 1 + .1 * ul('fortune'),
+    dmg: 10 * (1 + .3 * c) * dm, streams: streams(c), fireInt: fireInt(ul('rate')) / g('fire'),
+    wings: ul('wings'), wdmg: 6 * (1 + .3 * ul('wings')) * dm,
+    mis: ul('missiles'), mdmg: 22 * (1 + .35 * ul('missiles')) * dm, misInt: misInt(ul('missiles')),
+    las: ul('laser'), ldps: 70 * (1 + .4 * ul('laser')) * dm, lasInt: lasInt(ul('laser')),
+    drones: ul('drones'), ddmg: 7 * (1 + .25 * c) * dm,
+    maxHp: Math.round(maxHp(ul('hull')) * g('hp')), shield: ul('shield') * 22 + (m.shield || 0), regen: ul('regen') * 1.2,
+    bombs: 1 + ul('bomb'), mag: magR(ul('magnet')) * g('magnet'), fortune: (1 + .1 * ul('fortune')) * g('stars'),
     crit: ul('crit') * .06, revive: ul('revive') > 0,
+    speed: g('speed'), rescue: g('rescue'), barrier: m.barrier || 0, hitbox: 7 * g('hitbox'), invMul: g('inv'),
   };
 }
 
@@ -235,6 +291,9 @@ const ACH = [
   { id: 'm25', ic: '🎖️', name: 'Decorated', desc: 'Earn 25 medals', r: 800, t: () => medalCount() >= 25 },
   { id: 'm100', ic: '🎗️', name: 'Highly Decorated', desc: 'Earn 100 medals', r: 2500, t: () => medalCount() >= 100 },
   { id: 'mall', ic: '👑', name: 'Living Legend', desc: 'Earn every medal on every tier', r: 10000, t: () => medalCount() >= TOTAL_MEDALS },
+  { id: 'ship1', ic: '🛩️', name: 'New Wings', desc: 'Assemble your first new ship', r: 500, t: () => SHIPS.some(x => x.id !== 'ember' && shipOwned(x.id)) },
+  { id: 'fleet', ic: '✈️', name: 'Full Fleet', desc: 'Assemble every ship in the fleet', r: 5000, t: () => SHIPS.every(x => shipOwned(x.id)) },
+  { id: 'hive', ic: '🐝', name: 'Hive Breaker', desc: 'Destroy 10 Hive carriers', r: 600, t: () => save.stats.hives >= 10 },
   { id: 'streak', ic: '📅', name: 'Regular', desc: 'Check in 5 days in a row', r: 500, t: () => save.daily.streak >= 5 },
 ];
 function checkAch() {
@@ -257,6 +316,13 @@ const ET = {
   carrier: { hp: 450, r: 48, stars: 45, mv: 'carrier', fr: 3.2 },
   cache:   { hp: 30,  r: 17, stars: 0,  mv: 'ground', ground: 1, neutral: 1 },
   survivor:{ hp: 1e9, r: 16, stars: 0,  mv: 'ground', ground: 1, neutral: 1, nohit: 1 },
+  mine:    { hp: 10,  r: 13, stars: 3,  mv: 'drift', nocount: 1 },
+  sniper:  { hp: 40,  r: 18, stars: 8,  mv: 'hover', fr: 3.4 },
+  splitter:{ hp: 60,  r: 22, stars: 6,  mv: 'slow' },
+  mini:    { hp: 8,   r: 10, stars: 1,  mv: 'fling', nocount: 1 },
+  tank:    { hp: 90,  r: 20, stars: 10, mv: 'tank', fr: 2.4, ground: 1 },
+  hive:    { hp: 700, r: 52, stars: 70, mv: 'hive', fr: 2.8 },
+  salvage: { hp: 70,  r: 21, stars: 0,  mv: 'ground', ground: 1, neutral: 1 },
 };
 
 function addWave(tl, w, t, R, s) {
@@ -270,6 +336,11 @@ function addWave(tl, w, t, R, s) {
     case 'bomber': tl.push({ t, type: 'bomber', x: 0, y: 140 + R() * 220, dir: R() < .5 ? 1 : -1 }); break;
     case 'divers': for (let i = 0; i < 4; i++) tl.push({ t: t + i * .45, type: 'diver', x: 60 + R() * (W - 120) }); break;
     case 'carrier': tl.push({ t, type: 'carrier', x: W / 2 }); break;
+    case 'mines': for (let i = 0; i < 4; i++) tl.push({ t: t + i * .5, type: 'mine', x: 60 + R() * (W - 120) }); break;
+    case 'splitters': tl.push({ t, type: 'splitter', x: cx - 70 }, { t: t + .6, type: 'splitter', x: cx + 70 }); break;
+    case 'tanks': { const d = R() < .5 ? 1 : -1; tl.push({ t, type: 'tank', x: d > 0 ? 60 : W - 60, dir: d }, { t: t + 1.2, type: 'tank', x: d > 0 ? 140 : W - 140, dir: d }); break; }
+    case 'snipers': tl.push({ t, type: 'sniper', x: 90, ty: 110 }, { t: t + .4, type: 'sniper', x: W - 90, ty: 110 }); break;
+    case 'hive': tl.push({ t, type: 'hive', x: W / 2 }); break;
   }
 }
 
@@ -277,10 +348,11 @@ function genLevel(L, tier = 0) {
   const s = Math.floor(L / LEVELS_PER), idx = L % LEVELS_PER, R = rng(L * 7919 + 13);
   const len = 62 + idx * 7 + s * 5;
   const tl = [];
-  const pool = ['vee', 'sine', 'fighters', 'turrets', 'gunship', 'bomber', 'vee', 'sine'];
-  if (s >= 1) pool.push('divers');
-  if (s >= 2) pool.push('divers', 'fighters', 'gunship');
-  if (s >= 3) pool.push('bomber', 'turrets');
+  const pool = ['vee', 'sine', 'fighters', 'turrets', 'gunship', 'bomber', 'vee', 'sine', 'mines'];
+  if (s >= 1) pool.push('divers', 'splitters', 'tanks');
+  if (s >= 2) pool.push('divers', 'fighters', 'gunship', 'snipers');
+  if (s >= 3) pool.push('bomber', 'turrets', 'splitters', 'snipers');
+  if (s >= 4) pool.push('tanks', 'mines');
   let t = 2.5;
   while (t < len) { addWave(tl, pool[Math.floor(R() * pool.length)], t, R, s); t += (3.6 - Math.min(1.3, L * .065)) + R() * 1.3; }
   if (idx >= 1 || s >= 1) addWave(tl, 'carrier', len * .55, R, s);
@@ -289,12 +361,17 @@ function genLevel(L, tier = 0) {
     const R2 = rng(L * 7919 + 13 + tier * 101), extra = Math.round(len / 4.2 * TIERS[tier].extra);
     for (let i = 0; i < extra; i++) addWave(tl, pool[Math.floor(R2() * pool.length)], 3 + R2() * (len - 5), R2, s);
     if (tier >= 2) addWave(tl, 'carrier', len * .25, R2, s);
+    if (tier >= 2 && s >= 1) addWave(tl, 'hive', len * .45, R2, s);
   }
+  // the Hive: launches drones until destroyed
+  if ((s >= 1 && idx === 2) || (s >= 3 && idx >= 1)) addWave(tl, 'hive', len * .72, R, s);
   const nSurv = 3 + Math.floor(s / 2);
   for (let i = 0; i < nSurv; i++) tl.push({ t: len * (i + .5) / nSurv + R() * 4 - 2, type: 'survivor', x: 70 + R() * (W - 140) });
   for (let i = 0; i < 2 + Math.ceil(s / 2); i++) tl.push({ t: 4 + R() * (len - 8), type: 'cache', x: 60 + R() * (W - 120) });
+  const pa = partAt(L, tier);
+  if (pa && !hasPart(pa.ship, pa.idx)) tl.push({ t: len * (.3 + R() * .4), type: 'salvage', x: 90 + R() * (W - 180), part: pa });
   tl.sort((a, b) => a.t - b.t);
-  return { L, s, idx, len, tl, major: idx === LEVELS_PER - 1, survivors: nSurv, rush: false, tier,
+  return { L, s, idx, len, tl, major: idx === LEVELS_PER - 1, survivors: nSurv, rush: false, tier, part: pa,
     label: `${s + 1}-${idx + 1}${tier ? ' ' + TIERS[tier].name : ''}`, name: idx === LEVELS_PER - 1 ? `Boss: ${SECTORS[s].boss}` : SECTORS[s].name };
 }
 
@@ -321,10 +398,12 @@ let pointer = null;
 
 function newRun(level) {
   LV = level; ST = stats(); curSector = LV.s; TM = TIERS[LV.tier || 0];
-  P = { x: W / 2, y: H - 160, tx: null, ty: null, vx: 0, r: 7, hp: ST.maxHp, shield: ST.shield, shDelay: 0, inv: 1.5,
+  P = { x: W / 2, y: H - 160, tx: null, ty: null, vx: 0, r: ST.hitbox, hp: ST.maxHp, shield: ST.shield, shDelay: 0, inv: 1.5,
+    bar: ST.barrier > 0, barT: 0,
     fireT: 0, wingT: 0, misT: 1, lasT: 3, lasOn: 0, droT: .5, dead: false, revived: false };
   run = { stars: 0, baseCollected: 0, baseDropped: 0, kills: 0, total: 0, rescued: 0, damaged: false, bombs: ST.bombs,
-    usedBomb: false, combo: 0, comboT: 0, bestCombo: 0, lastKill: -9, endT: 0, failT: 0, failed: false, rescueStars: 0, done: false };
+    usedBomb: false, combo: 0, comboT: 0, bestCombo: 0, lastKill: -9, endT: 0, failT: 0, failed: false, rescueStars: 0, done: false,
+    found: [], newShip: null };
   enemies = []; pb = []; eb = []; pickups = []; parts = []; texts = [];
   levelT = 0; boss = null; flash = 0; shake = 0;
   LV.tl = LV.tl.slice();
@@ -395,9 +474,11 @@ function spawn(ev) {
   if (ev.type === 'stars') { dropStars(ev.x, -20, ev.n, 120); return; }
   const d = ET[ev.type], hpm = (1 + LV.L * .35) * TM.hp, s = LV.s;
   const e = { type: ev.type, x: ev.x, y: ev.y ?? -40, x0: ev.x, hp: d.hp * hpm, maxHp: d.hp * hpm, r: d.r, mv: ev.mv || d.mv,
-    t: 0, fireRate: d.fr ? d.fr / ((1 + s * .12) * DIFFS[save.diff].fire * TM.fire) : 0, counted: !d.neutral && ev.counted !== false,
+    t: 0, fireRate: d.fr ? d.fr / ((1 + s * .12) * DIFFS[save.diff].fire * TM.fire) : 0, counted: !d.neutral && !d.nocount && ev.counted !== false,
     ground: !!d.ground, neutral: !!d.neutral, nohit: !!d.nohit, stars: Math.round(d.stars * (1 + LV.L * .15) * TM.stars),
-    amp: ev.amp || 120, dir: ev.dir || 1, ty: ev.ty || 200, ang: Math.PI / 2, flash: 0, vx: 0, vy: 0, prog: 0, spawnT: 2.5 };
+    amp: ev.amp || 120, dir: ev.dir || 1, ty: ev.ty || 200, ang: Math.PI / 2, flash: 0, vx: ev.vx || 0, vy: ev.vy || 0, prog: 0,
+    spawnT: ev.type === 'hive' ? 1.5 : 2.5, arm: -1, aiming: 0, burst: 0, burstT: 0, bay: 0, part: ev.part, loyal: !!ev.loyal };
+  if (ev.type === 'mini' || ev.type === 'mine' || ev.type === 'splitter') e.x = e.x0 = clamp(e.x, 30, W - 30);
   e.fire = e.fireRate ? e.fireRate * (.4 + Math.random() * .6) : 0;
   if (e.type === 'bomber') { e.x = e.dir > 0 ? -60 : W + 60; }
   if (LV.rush) { e.fireRate = 0; e.stars *= 3; }
@@ -406,12 +487,21 @@ function spawn(ev) {
   return e;
 }
 
+const BOSSES = [
+  { shape: 'manta',    pats: ['radial', 'fan', 'wave', 'minions', 'fan', 'rain'] },
+  { shape: 'colossus', pats: ['cone', 'mines', 'spiral', 'fan', 'cone', 'rain'] },
+  { shape: 'maw',      pats: ['shards', 'beam', 'radial', 'fan', 'shards', 'minions'] },
+  { shape: 'thorn',    pats: ['cross', 'summon', 'wave', 'spiral', 'fan', 'beam'] },
+  { shape: 'eye', phases: [['radial', 'fan', 'beam', 'shards'], ['cross', 'summon', 'cone', 'wave', 'beam'], ['spiral', 'shards', 'beam', 'mines', 'rain', 'cone']] },
+];
+const VANGUARD_PATS = [['fan', 'radial', 'wave'], ['cone', 'fan', 'spiral'], ['shards', 'fan', 'radial'], ['cross', 'fan', 'wave'], ['beam', 'radial', 'cone']];
 function spawnBoss() {
-  const S = SECTORS[LV.s], major = LV.major;
+  const S = SECTORS[LV.s], major = LV.major, cfg = BOSSES[LV.s];
   const hp = (major ? 1500 : 620) * (1 + LV.L * .45) * TM.hp;
   boss = { type: 'boss', boss: true, major, x: W / 2, y: -160, hp, maxHp: hp, r: major ? 82 : 58, t: 0, pt: 0, pat: -1, rest: 1.5,
     fireT: 0, ang: 0, flash: 0, counted: false, ground: false, neutral: false, stars: Math.round((major ? 260 : 110) * (1 + LV.L * .2) * TM.stars),
-    name: major ? S.boss : `${S.boss.split(' ')[0]} VANGUARD`, spin: 0 };
+    name: major ? S.boss : `${S.boss.split(' ')[0]} VANGUARD`, spin: 0, shape: cfg.shape, phase: 0,
+    phases: major && cfg.phases ? cfg.phases : null, pats: major ? (cfg.phases ? cfg.phases[0] : cfg.pats) : VANGUARD_PATS[LV.s], beam: null };
   enemies.push(boss);
   banner = { a: 'WARNING', b: boss.name + ' INBOUND', t: 3, warn: true };
 }
@@ -420,7 +510,9 @@ function spawnBoss() {
 function addPB(x, y, vx, vy, dmg, r, kind) { pb.push({ x, y, vx, vy, dmg, r, kind }); }
 function eShoot(x, y, a, sp) {
   sp *= DIFFS[save.diff].bspd * TM.bspd * (1 + LV.s * .05);
-  eb.push({ x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: 6 });
+  const b = { x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: 6 };
+  eb.push(b);
+  return b;
 }
 const aim = e => Math.atan2(P.y - e.y, P.x - e.x);
 
@@ -440,6 +532,13 @@ function killEnemy(e) {
     texts.push({ x: e.x, y: e.y - 20, s: 'SUPPLY CACHE', c: '#ffd34d', t: 1, sz: 15 });
     return;
   }
+  if (e.type === 'salvage') {
+    if (e.part) pickups.push({ kind: 'part', ship: e.part.ship, idx: e.part.idx, x: e.x, y: e.y, vx: 0, vy: -90, t: 0 });
+    texts.push({ x: e.x, y: e.y - 24, s: 'SALVAGE CRATE: GRAB THE PART', c: '#7fe3ff', t: 1.4, sz: 14 });
+    return;
+  }
+  if (e.type === 'splitter') for (let i = -1; i <= 1; i++) spawn({ type: 'mini', x: e.x + i * 12, y: e.y, counted: false, vx: i * 170, vy: -70 });
+  if (e.type === 'hive') { save.stats.hives++; shake = 10; }
   if (e.counted) run.kills++;
   save.stats.kills++;
   run.combo = (gameT - run.lastKill < 1.6) ? run.combo + 1 : 1;
@@ -472,10 +571,15 @@ function comboMult() { return 1 + Math.min(run.combo, 60) / 30; }
 
 function hurtPlayer(d) {
   if (P.inv > 0 || P.dead || run.endT > 0) return;
+  if (P.bar) { // First Strike barrier eats the whole hit, then restores later
+    P.bar = false; P.barT = ST.barrier; P.inv = .6; sparks(P.x, P.y, '#ffe08a', 14);
+    texts.push({ x: P.x, y: P.y - 44, s: 'FIRST STRIKE BLOCKED', c: '#ffe08a', t: 1, sz: 14 });
+    return;
+  }
   d *= DIFFS[save.diff].dmg * TM.dmg;
   P.shDelay = 3;
   if (P.shield > 0) { const a = Math.min(P.shield, d); P.shield -= a; d -= a; }
-  if (d > 0) { P.hp -= d; run.damaged = true; P.inv = .9; shake = 9; sparks(P.x, P.y, '#ff6a4a', 12); }
+  if (d > 0) { P.hp -= d; run.damaged = true; P.inv = .9 * ST.invMul; shake = 9; sparks(P.x, P.y, '#ff6a4a', 12); }
   else { P.inv = .35; sparks(P.x, P.y, '#6fe3ff', 8); }
   if (P.hp <= 0) {
     if (ST.revive && !P.revived) {
@@ -531,9 +635,9 @@ function update(dt) {
     let kx = (keys.ArrowRight || keys.KeyD ? 1 : 0) - (keys.ArrowLeft || keys.KeyA ? 1 : 0);
     let ky = (keys.ArrowDown || keys.KeyS ? 1 : 0) - (keys.ArrowUp || keys.KeyW ? 1 : 0);
     const ox = P.x;
-    if (kx || ky) { const m = Math.hypot(kx, ky); P.x += kx / m * 400 * dt; P.y += ky / m * 400 * dt; P.tx = null; }
+    if (kx || ky) { const m = Math.hypot(kx, ky); P.x += kx / m * 400 * ST.speed * dt; P.y += ky / m * 400 * ST.speed * dt; P.tx = null; }
     else if (P.tx != null) {
-      const dx = P.tx - P.x, dy = P.ty - P.y, d = Math.hypot(dx, dy), mx = 1300 * dt;
+      const dx = P.tx - P.x, dy = P.ty - P.y, d = Math.hypot(dx, dy), mx = 1000 * ST.speed * dt;
       if (d > mx) { P.x += dx / d * mx; P.y += dy / d * mx; } else { P.x = P.tx; P.y = P.ty; }
     }
     P.x = clamp(P.x, 20, W - 20); P.y = clamp(P.y, 60, H - 40);
@@ -542,6 +646,7 @@ function update(dt) {
     if (ST.regen && P.hp < ST.maxHp) P.hp = Math.min(ST.maxHp, P.hp + ST.regen * dt);
     P.shDelay -= dt;
     if (ST.shield && P.shDelay <= 0 && P.shield < ST.shield) P.shield = Math.min(ST.shield, P.shield + ST.shield * .25 * dt);
+    if (ST.barrier && !P.bar) { P.barT -= dt; if (P.barT <= 0) { P.bar = true; texts.push({ x: P.x, y: P.y - 44, s: 'BARRIER RESTORED', c: '#ffe08a', t: .9, sz: 13 }); } }
     fireWeapons(dt);
   }
 
@@ -573,9 +678,14 @@ function update(dt) {
   // ---- enemies
   for (const e of enemies) { if (!e.dead) updEnemy(e, dt); }
   enemies = enemies.filter(e => !e.dead);
+  for (const e of enemies) if (e.beam && e.beam.on > 0 && !P.dead && Math.abs(P.x - e.beam.x) < 26 && P.y > e.y) hurtPlayer(20);
 
   // ---- enemy bullets
   for (const b of eb) {
+    if (b.split != null) { // shard: bursts into a ring
+      b.split -= dt;
+      if (b.split <= 0) { b.dead = true; for (let i = 0; i < 8; i++) eShoot(b.x, b.y, i / 8 * Math.PI * 2 + b.x * .01, 120); continue; }
+    }
     b.x += b.vx * dt; b.y += b.vy * dt;
     if (b.y > H + 20 || b.y < -40 || b.x < -20 || b.x > W + 20) b.dead = true;
     else if (!P.dead && (b.x - P.x) ** 2 + (b.y - P.y) ** 2 < (P.r + b.r - 1) ** 2) { b.dead = true; hurtPlayer(10 * (1 + LV.L * .04)); }
@@ -586,12 +696,13 @@ function update(dt) {
   for (const p of pickups) {
     p.t += dt;
     const d = Math.hypot(P.x - p.x, P.y - p.y);
-    if (!P.dead && (d < ST.mag || run.endT > 0) && p.t > .25) {
-      const sp = 380 + (ST.mag - Math.min(d, ST.mag)) * 3;
+    const magR = p.kind === 'part' ? Math.max(ST.mag, 170) : ST.mag;
+    if (!P.dead && (d < magR || run.endT > 0) && p.t > .25) {
+      const sp = 380 + (magR - Math.min(d, magR)) * 3;
       p.vx += (P.x - p.x) / d * sp * dt * 6; p.vy += (P.y - p.y) / d * sp * dt * 6;
       const m = Math.hypot(p.vx, p.vy), cap = run.endT > 0 ? 900 : 620; if (m > cap) { p.vx *= cap / m; p.vy *= cap / m; }
     } else {
-      p.vx *= Math.pow(.15, dt); p.vy += (SCROLL + 30 - p.vy) * Math.min(1, dt * 2.2);
+      p.vx *= Math.pow(.15, dt); p.vy += ((p.kind === 'part' ? 45 : SCROLL + 30) - p.vy) * Math.min(1, dt * 2.2);
     }
     p.x += p.vx * dt; p.y += p.vy * dt;
     if (!P.dead && d < P.r + 18) {
@@ -599,7 +710,8 @@ function update(dt) {
       if (p.kind === 'star') {
         const val = p.v * ST.fortune * DIFFS[save.diff].stars * comboMult();
         run.stars += val; run.baseCollected += p.v;
-      } else { P.hp = Math.min(ST.maxHp, P.hp + 25); texts.push({ x: P.x, y: P.y - 30, s: '+25 HULL', c: '#4cdf8a', t: .8, sz: 15 }); }
+      } else if (p.kind === 'part') collectPart(p);
+      else { P.hp = Math.min(ST.maxHp, P.hp + 25); texts.push({ x: P.x, y: P.y - 30, s: '+25 HULL', c: '#4cdf8a', t: .8, sz: 15 }); }
     } else if (p.y > H + 30) p.dead = true;
   }
   pickups = pickups.filter(p => !p.dead);
@@ -617,6 +729,17 @@ function update(dt) {
 
   if (run.endT > 0) { run.endT -= dt; if (run.endT <= 0 && !run.done) finishLevel(true); }
   if (run.failT > 0) { run.failT -= dt; if (run.failT <= 0 && !run.done) finishLevel(false); }
+}
+
+function collectPart(p) {
+  const arr = shipParts(p.ship);
+  if (arr[p.idx]) return;
+  arr[p.idx] = 1; persist();
+  const S = shipById(p.ship), n = arr.filter(Boolean).length;
+  run.found.push(`${S.name} ${PART_NAMES[p.idx]} (${n}/4)`);
+  texts.push({ x: clamp(P.x, 140, W - 140), y: P.y - 54, s: `${S.name.toUpperCase()} ${PART_NAMES[p.idx].toUpperCase()} · ${n}/4`, c: '#7fe3ff', t: 1.8, sz: 16 });
+  sparks(P.x, P.y, '#7fe3ff', 18);
+  if (n === 4) { banner = { a: 'NEW SHIP', b: `${S.name} is ready in the hangar`, t: 3 }; run.newShip = S; }
 }
 
 function fireWeapons(dt) {
@@ -665,13 +788,45 @@ function updEnemy(e, dt) {
       else { if (!e.locked) { e.locked = 1; const a = aim(e); e.vx = Math.cos(a) * 340; e.vy = Math.sin(a) * 340; } e.x += e.vx * dt; e.y += e.vy * dt; }
       break;
     case 'ground': e.y += SCROLL * dt; break;
+    case 'drift': e.y += 75 * dt; e.x = e.x0 + Math.sin(e.t * 1.5) * 25; break;
+    case 'fling': e.x += e.vx * dt; e.y += e.vy * dt; e.vx *= Math.pow(.3, dt); e.vy += (170 - e.vy) * Math.min(1, dt * 1.5); break;
+    case 'tank': e.y += SCROLL * dt; e.x += e.dir * 45 * dt; if (e.x < 40 || e.x > W - 40) e.dir *= -1; break;
+    case 'hive':
+      if (boss && !e.loyal) { e.y -= 70 * dt; if (e.y < -90) { e.dead = true; return; } } // retreats when the boss arrives
+      else { if (e.y < 170) e.y += 50 * dt; e.x = W / 2 + Math.sin(e.t * .4) * 140; }
+      if (e.bay > 0) e.bay -= dt;
+      e.spawnT -= dt;
+      if (e.spawnT <= 0 && e.y > 40 && (!boss || e.loyal)) {
+        e.spawnT = 2.4 / Math.sqrt(TM.fire); e.bay = .4;
+        const k = Math.floor(Math.random() * 3);
+        if (k === 0) for (const sx of [-1, 1]) spawn({ type: 'scout', x: e.x + sx * 44, y: e.y + 30, counted: false });
+        else if (k === 1) spawn({ type: 'diver', x: e.x, y: e.y + 40, counted: false });
+        else for (let i = 0; i < 3; i++) spawn({ type: 'mini', x: e.x, y: e.y + 40, counted: false, vx: rand(-160, 160), vy: 40 });
+      }
+      break;
     case 'carrier':
       e.y += (e.y < 190 ? 55 : 9) * dt; e.x = W / 2 + Math.sin(e.t * .5) * 120;
       e.spawnT -= dt;
       if (e.spawnT <= 0 && e.y > 0 && e.y < H * .6) { e.spawnT = 3.2; for (const s of [-1, 1]) spawn({ type: 'scout', x: e.x + s * 40, y: e.y + 20, counted: false }); }
       break;
   }
-  if (e.type === 'turret') e.ang = aim(e);
+  if (e.type === 'turret' || e.type === 'tank' || e.type === 'sniper') e.ang = e.aiming > 0 || e.burst > 0 ? e.lockA : aim(e);
+  // telegraphed bursts (sniper aim line, tank double-tap)
+  if (e.aiming > 0) { e.aiming -= dt; if (e.aiming <= 0) { e.burst = 3; e.burstT = 0; } }
+  if (e.burst > 0) { e.burstT -= dt; if (e.burstT <= 0) { e.burstT = e.type === 'tank' ? .18 : .09; e.burst--; eShoot(e.x, e.y + 10, e.lockA, e.burstSp || 330); } }
+  // mines arm when you get close, then burst
+  if (e.type === 'mine' && !P.dead) {
+    if (e.arm < 0 && Math.hypot(P.x - e.x, P.y - e.y) < 85) e.arm = .7;
+    if (e.arm >= 0) {
+      e.arm -= dt;
+      if (e.arm <= 0) {
+        e.dead = true; boom(e.x, e.y, 18);
+        for (let i = 0; i < 8; i++) eShoot(e.x, e.y, i / 8 * Math.PI * 2, 150);
+        if (Math.hypot(P.x - e.x, P.y - e.y) < 46) hurtPlayer(14);
+        return;
+      }
+    }
+  }
   // firing
   if (e.fireRate && e.y > 20 && e.y < H * .72 && !P.dead && run.endT <= 0) {
     e.fire -= dt;
@@ -683,6 +838,9 @@ function updEnemy(e, dt) {
         case 'gunship': for (let i = -1; i <= 1; i++) eShoot(e.x, e.y + 20, a + i * .22, 180); break;
         case 'bomber': eShoot(e.x, e.y + 12, Math.PI / 2, 160); break;
         case 'carrier': for (let i = 0; i < 10; i++) eShoot(e.x, e.y, i / 10 * Math.PI * 2 + e.t, 150); break;
+        case 'sniper': e.aiming = .9; e.lockA = a; e.burstSp = 330; break;
+        case 'tank': e.lockA = a; e.burst = 2; e.burstT = 0; e.burstSp = 190; break;
+        case 'hive': for (let i = 0; i < 6; i++) eShoot(e.x, e.y + 30, a + (i - 2.5) * .22, 140); break;
       }
     }
   }
@@ -690,7 +848,7 @@ function updEnemy(e, dt) {
   if (e.type === 'survivor' && !P.dead) {
     const near = Math.hypot(P.x - e.x, P.y - e.y) < 46;
     if (near) {
-      e.prog += dt / 1.1;
+      e.prog += dt / 1.1 * ST.rescue;
       if (e.prog >= 1) {
         e.dead = true; run.rescued++; save.stats.rescues++;
         const v = Math.round((30 + LV.L * 6) * DIFFS[save.diff].stars * TM.stars);
@@ -709,10 +867,23 @@ function updEnemy(e, dt) {
 
 function updBoss(e, dt) {
   e.spin += dt;
+  if (e.beam) { // telegraph, then a column of light down from the boss
+    const b = e.beam;
+    if (b.tele > 0) { b.tele -= dt; if (b.tele <= 0) { b.on = .9; shake = 6; } }
+    else if (b.on > 0) { b.on -= dt; if (b.on <= 0) e.beam = null; }
+  }
   if (e.y < 190) { e.y += 90 * dt; return; }
   e.x = W / 2 + Math.sin(e.t * .45) * (W / 2 - e.r - 30);
+  if (e.phases) {
+    const ph = e.hp < e.maxHp / 3 ? 2 : e.hp < e.maxHp * 2 / 3 ? 1 : 0;
+    if (ph !== e.phase) {
+      e.phase = ph; e.pats = e.phases[ph]; e.pat = -1; e.rest = 1.2; e.beam = null; eb = []; flash = .4; shake = 12;
+      banner = { a: `PHASE ${ph + 1}`, b: ph === 2 ? 'The Overseer is desperate' : 'The Overseer adapts', t: 2.2, warn: true };
+      if (ph === 1) spawn({ type: 'hive', x: W / 2, y: -60, counted: false, loyal: true });
+    }
+  }
   const rage = (e.hp < e.maxHp * .5 ? .72 : 1) / Math.sqrt(TM.fire);
-  const pats = e.major ? ['radial', 'fan', 'spiral', 'minions', 'fan', 'rain'] : ['fan', 'radial', 'spiral'];
+  const pats = e.pats;
   if (e.rest > 0) { e.rest -= dt; if (e.rest <= 0) { e.pat = (e.pat + 1) % pats.length; e.pt = 0; e.fireT = 0; } return; }
   e.pt += dt; e.fireT -= dt;
   const p = pats[e.pat], s = LV.s;
@@ -723,9 +894,17 @@ function updBoss(e, dt) {
       case 'spiral': { e.fireT = .09 * rage; const a = e.pt * 3.1; eShoot(e.x, e.y, a, 150); eShoot(e.x, e.y, a + Math.PI, 150); break; }
       case 'minions': { e.fireT = 99; for (let i = 0; i < 4; i++) spawn({ type: 'diver', x: 80 + i * (W - 160) / 3, y: -30, counted: false }); break; }
       case 'rain': { e.fireT = .16 * rage; eShoot(rand(20, W - 20), -10, Math.PI / 2 + rand(-.1, .1), 150); break; }
+      case 'wave': { e.fireT = .85 * rage; const n = 13, gap = 1 + Math.floor(Math.random() * (n - 4)); for (let i = 0; i < n; i++) if (i < gap || i > gap + 2) eShoot(20 + i * (W - 40) / (n - 1), e.y + 30, Math.PI / 2, 120); break; }
+      case 'cone': { e.fireT = .07 * rage; eShoot(e.x, e.y + e.r * .6, aim(e) + rand(-.4, .4), rand(190, 250)); break; }
+      case 'mines': { e.fireT = 99; for (let i = 0; i < 4; i++) spawn({ type: 'mine', x: 70 + i * (W - 140) / 3, y: e.y + 20, counted: false }); break; }
+      case 'shards': { e.fireT = 1.0 * rage; const a = aim(e); for (let i = -1; i <= 1; i++) { const b = eShoot(e.x, e.y + 30, a + i * .35, 130); b.r = 11; b.split = .9; } break; }
+      case 'beam': { e.fireT = 99; e.beam = { x: clamp(P.x, 30, W - 30), tele: 1.1, on: 0 }; break; }
+      case 'cross': { e.fireT = .13 * rage; for (let k = 0; k < 4; k++) eShoot(e.x, e.y, e.pt * 1.5 + k * Math.PI / 2, 150); break; }
+      case 'summon': { e.fireT = 99; for (const sx of [-1, 1]) spawn({ type: 'splitter', x: e.x + sx * 120, y: e.y, counted: false }); break; }
     }
   }
-  if (e.pt > (p === 'minions' ? 1.5 : 3.2)) { e.rest = 1.1 * rage; }
+  const dur = { minions: 1.5, mines: 1.5, summon: 1.5, beam: 2.6 }[p] || 3.2;
+  if (e.pt > dur) e.rest = 1.1 * rage;
   if (!P.dead && (e.x - P.x) ** 2 + (e.y - P.y) ** 2 < (e.r * .7 + P.r) ** 2) hurtPlayer(25);
 }
 
@@ -737,24 +916,39 @@ function star(x, y, r, rot) {
 }
 function poly(pts) { ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.closePath(); }
 
-function drawPlayerShip(x, y, tilt, scale = 1) {
+const SHAPES = {
+  delta:   [[0, -32], [7, -12], [9, -2], [32, 12], [32, 19], [9, 14], [6, 20], [-6, 20], [-9, 14], [-32, 19], [-32, 12], [-9, -2], [-7, -12]],
+  swept:   [[0, -34], [6, -10], [10, 0], [30, 20], [26, 24], [8, 14], [5, 20], [-5, 20], [-8, 14], [-26, 24], [-30, 20], [-10, 0], [-6, -10]],
+  wide:    [[0, -28], [8, -10], [12, -4], [36, 4], [36, 14], [12, 14], [7, 20], [-7, 20], [-12, 14], [-36, 14], [-36, 4], [-12, -4], [-8, -10]],
+  heavy:   [[0, -30], [10, -16], [14, -2], [30, 6], [34, 20], [14, 18], [10, 24], [-10, 24], [-14, 18], [-34, 20], [-30, 6], [-14, -2], [-10, -16]],
+  forward: [[0, -32], [7, -12], [10, 4], [30, -6], [32, 2], [12, 16], [6, 22], [-6, 22], [-12, 16], [-32, 2], [-30, -6], [-10, 4], [-7, -12]],
+};
+SHAPES.ring = SHAPES.delta;
+function drawPlayerShip(x, y, tilt, scale = 1, id = save.ship) {
+  const S = shipById(id), pts = SHAPES[S.shape] || SHAPES.delta;
   ctx.save(); ctx.translate(x, y); ctx.scale(scale * (1 - Math.abs(tilt) * .25), scale);
-  // engine glow
   const fl = 16 + Math.random() * 10;
-  ctx.fillStyle = 'rgba(80,200,255,.85)'; poly([[-7, 16], [0, 16 + fl], [7, 16]]); ctx.fill();
+  ctx.globalAlpha = .85; ctx.fillStyle = S.col[2]; poly([[-7, 16], [0, 16 + fl], [7, 16]]); ctx.fill(); ctx.globalAlpha = 1;
   ctx.fillStyle = 'rgba(255,255,255,.9)'; poly([[-3, 16], [0, 12 + fl * .6], [3, 16]]); ctx.fill();
-  // body
-  ctx.fillStyle = '#d7e3ef';
-  poly([[0, -32], [7, -12], [9, -2], [32, 12], [32, 19], [9, 14], [6, 20], [-6, 20], [-9, 14], [-32, 19], [-32, 12], [-9, -2], [-7, -12]]); ctx.fill();
-  ctx.fillStyle = '#9fb2c6'; poly([[9, -2], [32, 12], [32, 19], [9, 14]]); ctx.fill(); poly([[-9, -2], [-32, 12], [-32, 19], [-9, 14]]); ctx.fill();
-  // jarvis-blue accents
-  ctx.fillStyle = '#29b6f6'; poly([[22, 10], [32, 12], [32, 15], [20, 13]]); ctx.fill(); poly([[-22, 10], [-32, 12], [-32, 15], [-20, 13]]); ctx.fill();
+  ctx.fillStyle = S.col[0]; poly(pts); ctx.fill();
+  ctx.fillStyle = S.col[1]; poly(pts.map(([px, py]) => [px * .55, py * .7 + 6])); ctx.fill();
+  ctx.fillStyle = S.col[2];
+  for (const sx of [-1, 1]) { const tip = pts.reduce((a, q) => q[0] * sx > a[0] * sx ? q : a); ctx.beginPath(); ctx.arc(tip[0] - sx * 4, tip[1] - 1, 3, 0, 7); ctx.fill(); }
   ctx.fillStyle = '#ff9a3d'; ctx.fillRect(-2, 4, 4, 12);
-  // canopy
-  const g = ctx.createLinearGradient(0, -24, 0, -4); g.addColorStop(0, '#bff3ff'); g.addColorStop(1, '#1e88c7');
+  if (S.shape === 'ring') { ctx.strokeStyle = S.col[2]; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.ellipse(0, 6, 27, 9, 0, 0, 7); ctx.stroke(); }
+  const g = ctx.createLinearGradient(0, -24, 0, -4); g.addColorStop(0, '#ffffff'); g.addColorStop(1, S.col[2]);
   ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(0, -13, 4.5, 10, 0, 0, 7); ctx.fill();
   ctx.restore();
 }
+const iconCache = {};
+function shipIcon(id) {
+  if (iconCache[id]) return iconCache[id];
+  const c = document.createElement('canvas'); c.width = c.height = 144;
+  const old = ctx; ctx = c.getContext('2d');
+  try { drawPlayerShip(72, 70, 0, 1.75, id); } finally { ctx = old; }
+  return (iconCache[id] = c.toDataURL());
+}
+function hex(r) { ctx.beginPath(); for (let i = 0; i < 6; i++) ctx.lineTo(Math.cos(i * Math.PI / 3) * r, Math.sin(i * Math.PI / 3) * r); ctx.closePath(); }
 
 function drawEnemy(e) {
   const S = SECTORS[LV ? LV.s : 0], col = e.flash > 0 ? '#fff' : S.enemy;
@@ -792,6 +986,49 @@ function drawEnemy(e) {
       ctx.fillStyle = e.flash > 0 ? '#fff' : '#8a6a24'; ctx.fillRect(-16, -16, 32, 32);
       ctx.strokeStyle = '#ffd34d'; ctx.lineWidth = 3; ctx.strokeRect(-16, -16, 32, 32);
       ctx.fillStyle = '#ffd34d'; star(0, 0, 9, 0); ctx.fill(); break;
+    case 'mine': {
+      const blink = e.arm >= 0 && Math.floor(gameT * 16) % 2;
+      ctx.fillStyle = blink ? '#fff' : '#454b57'; ctx.beginPath(); ctx.arc(0, 0, 11, 0, 7); ctx.fill();
+      ctx.strokeStyle = col; ctx.lineWidth = 3;
+      for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3 + e.t; ctx.beginPath(); ctx.moveTo(Math.cos(a) * 10, Math.sin(a) * 10); ctx.lineTo(Math.cos(a) * 16, Math.sin(a) * 16); ctx.stroke(); }
+      ctx.fillStyle = e.arm >= 0 ? '#ff3b2e' : col; ctx.beginPath(); ctx.arc(0, 0, 4, 0, 7); ctx.fill();
+      if (e.arm >= 0) { ctx.strokeStyle = 'rgba(255,60,40,.5)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, 46, 0, 7); ctx.stroke(); }
+      break; }
+    case 'sniper':
+      ctx.fillStyle = col; poly([[0, 24], [6, 4], [18, -2], [18, -10], [5, -8], [3, -20], [-3, -20], [-5, -8], [-18, -10], [-18, -2], [-6, 4]]); ctx.fill();
+      ctx.save(); ctx.rotate(e.ang - Math.PI / 2); ctx.fillStyle = '#20232a'; ctx.fillRect(-2, 0, 4, 30); ctx.restore();
+      ctx.fillStyle = '#7fe3ff'; ctx.beginPath(); ctx.arc(0, 0, 4, 0, 7); ctx.fill(); break;
+    case 'splitter':
+      ctx.rotate(e.t * 1.2); ctx.fillStyle = col;
+      for (let i = 0; i < 3; i++) { ctx.rotate(Math.PI * 2 / 3); poly([[0, 0], [10, -24], [-10, -24]]); ctx.fill(); }
+      ctx.fillStyle = '#2b2f38'; ctx.beginPath(); ctx.arc(0, 0, 11, 0, 7); ctx.fill();
+      ctx.fillStyle = '#ffd34d'; ctx.beginPath(); ctx.arc(0, 0, 4, 0, 7); ctx.fill(); break;
+    case 'mini':
+      ctx.rotate(e.t * 6); ctx.fillStyle = col; poly([[0, -10], [9, 6], [-9, 6]]); ctx.fill(); break;
+    case 'tank':
+      ctx.fillStyle = '#2c3038'; ctx.fillRect(-18, -16, 36, 32);
+      ctx.fillStyle = '#4a4f5a'; ctx.fillRect(-22, -18, 7, 36); ctx.fillRect(15, -18, 7, 36);
+      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(0, 0, 10, 0, 7); ctx.fill();
+      ctx.rotate(e.ang - Math.PI / 2); ctx.fillStyle = '#20232a'; ctx.fillRect(-3, 0, 6, 24); break;
+    case 'hive': {
+      ctx.rotate(e.t * .3);
+      ctx.fillStyle = '#2d313b'; hex(54); ctx.fill(); ctx.fillStyle = col; hex(44); ctx.fill();
+      const glow = Math.min(1, .45 + Math.sin(gameT * 5) * .25 + (e.bay > 0 ? .5 : 0));
+      for (let i = 0; i < 6; i++) {
+        const a = i * Math.PI / 3 + Math.PI / 6, bx = Math.cos(a) * 29, by = Math.sin(a) * 29;
+        ctx.fillStyle = '#1b1e25'; ctx.beginPath(); ctx.arc(bx, by, 9, 0, 7); ctx.fill();
+        ctx.fillStyle = `rgba(255,190,60,${glow})`; ctx.beginPath(); ctx.arc(bx, by, 4.5, 0, 7); ctx.fill();
+      }
+      ctx.fillStyle = '#1b1e25'; ctx.beginPath(); ctx.arc(0, 0, 14, 0, 7); ctx.fill();
+      ctx.fillStyle = '#ff3b2e'; ctx.beginPath(); ctx.arc(0, 0, 7, 0, 7); ctx.fill();
+      break; }
+    case 'salvage': {
+      const pulse = (gameT * 1.2) % 1;
+      ctx.strokeStyle = `rgba(127,227,255,${1 - pulse})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, 22 + pulse * 22, 0, 7); ctx.stroke();
+      ctx.fillStyle = e.flash > 0 ? '#fff' : '#1d4a63'; ctx.fillRect(-19, -19, 38, 38);
+      ctx.strokeStyle = '#7fe3ff'; ctx.lineWidth = 3; ctx.strokeRect(-19, -19, 38, 38);
+      gear(0, 0, 9, '#7fe3ff', e.t);
+      break; }
     case 'survivor': {
       const pulse = (gameT * 1.5) % 1;
       ctx.strokeStyle = `rgba(76,223,138,${1 - pulse})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, 18 + pulse * 26, 0, 7); ctx.stroke();
@@ -810,24 +1047,66 @@ function drawEnemy(e) {
   }
 }
 
+function gear(x, y, r, c, rot) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot || 0); ctx.strokeStyle = c; ctx.fillStyle = c; ctx.lineWidth = 3;
+  for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4; ctx.fillRect(Math.cos(a) * r - 2.5, Math.sin(a) * r - 2.5, 5, 5); }
+  ctx.beginPath(); ctx.arc(0, 0, r * .75, 0, 7); ctx.stroke();
+  ctx.restore();
+}
 function drawBoss(e) {
-  const S = SECTORS[LV.s], col = e.flash > 0 ? '#fff' : S.enemy, R = e.r;
+  const S = SECTORS[LV.s], col = e.flash > 0 ? '#fff' : S.enemy, R = e.r, dark = '#2d313b';
+  const sc = k => q => [q[0] * R * k, q[1] * R * k];
   ctx.save(); ctx.translate(e.x, e.y);
   ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(14, 24, R * 1.1, R * .7, 0, 0, 7); ctx.fill();
-  ctx.fillStyle = '#2d313b';
-  poly([[0, R * 1.05], [R * .7, R * .6], [R * 1.35, R * .1], [R * 1.25, -R * .45], [R * .55, -R * .8], [-R * .55, -R * .8], [-R * 1.25, -R * .45], [-R * 1.35, R * .1], [-R * .7, R * .6]]); ctx.fill();
-  ctx.fillStyle = col;
-  poly([[0, R * .9], [R * .55, R * .5], [R * 1.05, R * .05], [R * .95, -R * .35], [R * .4, -R * .62], [-R * .4, -R * .62], [-R * .95, -R * .35], [-R * 1.05, R * .05], [-R * .55, R * .5]]); ctx.fill();
-  ctx.fillStyle = '#1b1e25'; ctx.beginPath(); ctx.arc(0, 0, R * .38, 0, 7); ctx.fill();
-  // eye
+  let coreR = R * .32;
+  switch (e.shape) {
+    case 'manta': {
+      const body = [[0, .9], [.5, .4], [1.5, -.1], [1.2, -.35], [.4, -.6], [0, -.8], [-.4, -.6], [-1.2, -.35], [-1.5, -.1], [-.5, .4]];
+      ctx.fillStyle = dark; ctx.fillRect(-R * .08, -R * 1.35, R * .16, R * .7);
+      ctx.fillStyle = dark; poly(body.map(sc(1))); ctx.fill();
+      ctx.fillStyle = col; poly(body.map(sc(.8))); ctx.fill();
+      ctx.fillStyle = dark; for (const sx of [-1, 1]) { ctx.beginPath(); ctx.arc(sx * R * .85, -R * .05, R * .13, 0, 7); ctx.fill(); }
+      break; }
+    case 'colossus': {
+      ctx.fillStyle = dark; for (const sx of [-1, 1]) { ctx.beginPath(); ctx.arc(sx * R * 1.0, -R * .1, R * .38, 0, 7); ctx.fill(); }
+      ctx.fillStyle = dark; ctx.fillRect(-R * .85, -R * .8, R * 1.7, R * 1.55);
+      ctx.fillStyle = col; ctx.fillRect(-R * .68, -R * .62, R * 1.36, R * 1.15);
+      const heat = .5 + Math.sin(gameT * 7) * .3;
+      ctx.fillStyle = `rgba(255,140,40,${heat})`; for (let i = 0; i < 3; i++) ctx.fillRect(-R * .5, R * (.18 + i * .14), R, R * .07);
+      ctx.fillStyle = col; for (const sx of [-1, 1]) { ctx.beginPath(); ctx.arc(sx * R * 1.0, -R * .1, R * .24, 0, 7); ctx.fill(); }
+      coreR = R * .26; ctx.translate(0, -R * .2);
+      break; }
+    case 'maw': {
+      const n = 14, outer = [], inner = [];
+      for (let i = 0; i < n; i++) { const a = i / n * Math.PI * 2, k = i % 2 ? .82 : 1.05; outer.push([Math.cos(a) * k, Math.sin(a) * k * .85]); inner.push([Math.cos(a) * k * .78, Math.sin(a) * k * .66]); }
+      ctx.fillStyle = dark; poly(outer.map(sc(1))); ctx.fill();
+      ctx.fillStyle = col; poly(inner.map(sc(1))); ctx.fill();
+      const open = .15 + (Math.sin(gameT * 3) + 1) * .08;
+      ctx.fillStyle = '#10131a'; ctx.beginPath(); ctx.ellipse(0, R * .35, R * .55, R * open * 1.4, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = '#e8f6ff'; for (let i = -3; i <= 3; i++) { poly([[i * R * .14 - R * .05, R * .2], [i * R * .14 + R * .05, R * .2], [i * R * .14, R * (.3 + open)]]); ctx.fill(); }
+      ctx.translate(0, -R * .2); coreR = R * .24;
+      break; }
+    case 'thorn': {
+      ctx.fillStyle = dark;
+      for (let i = 0; i < 10; i++) { const a = i / 10 * Math.PI * 2 + e.spin * .5; ctx.save(); ctx.rotate(a); poly([[-R * .16, -R * .6], [R * .16, -R * .6], [0, -R * 1.3]]); ctx.fill(); ctx.restore(); }
+      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(0, 0, R * .78, 0, 7); ctx.fill();
+      ctx.strokeStyle = dark; ctx.lineWidth = 4;
+      for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2 - e.spin * .3; ctx.beginPath(); ctx.arc(Math.cos(a) * R * .45, Math.sin(a) * R * .45, R * .2, 0, 7); ctx.stroke(); }
+      break; }
+    case 'eye': {
+      ctx.fillStyle = dark;
+      for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2 + e.spin * (e.phase === 2 ? 1.6 : .7); ctx.save(); ctx.rotate(a); ctx.fillRect(R * .95, -R * .14, R * .32, R * .28); ctx.restore(); }
+      ctx.beginPath(); ctx.arc(0, 0, R, 0, 7); ctx.fill();
+      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(0, 0, R * .84, 0, 7); ctx.fill();
+      ctx.fillStyle = '#e9edf5'; ctx.beginPath(); ctx.ellipse(0, 0, R * .66, R * .5, 0, 0, 7); ctx.fill();
+      const a = aim(e); ctx.translate(Math.cos(a) * R * .22, Math.sin(a) * R * .16);
+      coreR = R * .3;
+      break; }
+  }
+  ctx.fillStyle = '#1b1e25'; ctx.beginPath(); ctx.arc(0, 0, coreR * 1.2, 0, 7); ctx.fill();
   const pulse = .6 + Math.sin(gameT * 6) * .4;
-  const eg = ctx.createRadialGradient(0, 0, 2, 0, 0, R * .32); eg.addColorStop(0, '#fff'); eg.addColorStop(.3, `rgba(255,60,40,${pulse})`); eg.addColorStop(1, 'rgba(255,40,30,0)');
-  ctx.fillStyle = eg; ctx.beginPath(); ctx.arc(0, 0, R * .32, 0, 7); ctx.fill();
-  // turrets
-  ctx.fillStyle = '#3c4048';
-  for (const s of [-1, 1]) { ctx.beginPath(); ctx.arc(s * R * .78, -R * .05, R * .16, 0, 7); ctx.fill(); }
-  ctx.strokeStyle = 'rgba(255,255,255,.15)'; ctx.lineWidth = 2;
-  ctx.beginPath(); ctx.arc(0, 0, R * .5, e.spin, e.spin + 2); ctx.stroke(); ctx.beginPath(); ctx.arc(0, 0, R * .5, e.spin + 3, e.spin + 5); ctx.stroke();
+  const eg = ctx.createRadialGradient(0, 0, 2, 0, 0, coreR); eg.addColorStop(0, '#fff'); eg.addColorStop(.3, `rgba(255,60,40,${pulse})`); eg.addColorStop(1, 'rgba(255,40,30,0)');
+  ctx.fillStyle = eg; ctx.beginPath(); ctx.arc(0, 0, coreR, 0, 7); ctx.fill();
   ctx.restore();
 }
 
@@ -896,12 +1175,34 @@ function render() {
       const r = p.v >= 10 ? 11 : p.v >= 5 ? 9 : 6;
       ctx.fillStyle = p.v >= 10 ? '#fff1a8' : '#ffcc33';
       star(p.x, p.y, r, p.spin + p.t * 3); ctx.fill();
+    } else if (p.kind === 'part') {
+      const bob = Math.sin(p.t * 5) * 3;
+      ctx.fillStyle = 'rgba(127,227,255,.25)'; ctx.beginPath(); ctx.arc(p.x, p.y + bob, 22, 0, 7); ctx.fill();
+      gear(p.x, p.y + bob, 10, '#bff3ff', p.t * 2);
+      ctx.fillStyle = '#bff3ff'; ctx.font = '700 10px Orbitron, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('PART', p.x, p.y + bob + 32);
     } else {
       ctx.fillStyle = '#4cdf8a'; ctx.beginPath(); ctx.arc(p.x, p.y, 11, 0, 7); ctx.fill();
       ctx.fillStyle = '#fff'; ctx.fillRect(p.x - 6, p.y - 2, 12, 4); ctx.fillRect(p.x - 2, p.y - 6, 4, 12);
     }
   }
   for (const e of enemies) if (!e.ground) e.boss ? drawBoss(e) : drawEnemy(e);
+  for (const e of enemies) {
+    if (e.aiming > 0) {
+      ctx.strokeStyle = `rgba(255,80,60,${.3 + .6 * (1 - e.aiming / .9)})`; ctx.lineWidth = 1.5; ctx.setLineDash([8, 6]);
+      ctx.beginPath(); ctx.moveTo(e.x, e.y); ctx.lineTo(e.x + Math.cos(e.lockA) * 1300, e.y + Math.sin(e.lockA) * 1300); ctx.stroke(); ctx.setLineDash([]);
+    }
+    if (e.beam) {
+      const b = e.beam, top = e.y + e.r * .5;
+      if (b.tele > 0) {
+        ctx.fillStyle = `rgba(255,70,50,${.08 + .12 * Math.sin(gameT * 30) ** 2})`; ctx.fillRect(b.x - 26, top, 52, H - top);
+        ctx.strokeStyle = 'rgba(255,80,60,.8)'; ctx.lineWidth = 2; ctx.setLineDash([10, 8]); ctx.beginPath(); ctx.moveTo(b.x, top); ctx.lineTo(b.x, H); ctx.stroke(); ctx.setLineDash([]);
+      } else if (b.on > 0) {
+        const g = ctx.createLinearGradient(b.x - 30, 0, b.x + 30, 0);
+        g.addColorStop(0, 'rgba(255,80,50,0)'); g.addColorStop(.5, 'rgba(255,230,210,.95)'); g.addColorStop(1, 'rgba(255,80,50,0)');
+        ctx.fillStyle = g; ctx.fillRect(b.x - 30, top, 60, H - top);
+      }
+    }
+  }
   // laser
   if (P.lasOn > 0 && !P.dead) {
     const w = 10 + Math.sin(gameT * 50) * 3;
@@ -918,9 +1219,10 @@ function render() {
   // player
   if (!P.dead && (P.inv <= 0 || Math.floor(gameT * 20) % 2 === 0)) {
     drawPlayerShip(P.x, P.y, clamp(P.vx / 900, -1, 1));
+    if (P.bar) { ctx.save(); ctx.translate(P.x, P.y); ctx.rotate(gameT); ctx.strokeStyle = 'rgba(255,224,138,.8)'; ctx.lineWidth = 2; hex(42); ctx.stroke(); ctx.restore(); }
     if (P.shield > 0) { ctx.strokeStyle = `rgba(63,216,255,${.25 + .35 * P.shield / ST.shield})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(P.x, P.y, 36, 0, 7); ctx.stroke(); }
     // hitbox dot
-    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(P.x, P.y, 3, 0, 7); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(P.x, P.y, Math.max(2, P.r * .43), 0, 7); ctx.fill();
     for (const d of dronePos()) { ctx.fillStyle = '#b48cff'; ctx.beginPath(); ctx.arc(d.x, d.y, 7, 0, 7); ctx.fill(); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(d.x, d.y, 2.5, 0, 7); ctx.fill(); }
   }
   // enemy bullets
@@ -997,6 +1299,8 @@ function finishLevel(success) {
     if (save.diff === 2) save.stats.vetClears++;
     if (firstClear && L === NLEVELS - 1) story = { title: 'TRANSMISSION · THE END', lines: STORY.ending };
   }
+  for (const f of run.found) lines.push([`🔩 Part recovered: ${f}`, null]);
+  if (run.newShip) lines.push([`🛩️ New ship assembled: ${run.newShip.name}`, null]);
   save.stars += total; save.total += total;
   persist();
   checkAch();
@@ -1005,10 +1309,10 @@ function finishLevel(success) {
   const tm = !LV.rush && save.lv[L] ? save.lv[L].t[tier] : [];
   $('resMedals').innerHTML = LV.rush ? '' : MEDALS.slice(0, nM).map((m, i) =>
     `<div class="medal ${tm[i] ? 'on' : ''} ${newly[i] ? 'new' : ''}"><div class="m">${m.ic}</div>${m.n}</div>`).join('');
-  $('resLines').innerHTML = lines.map(l => `<div><span>${l[0]}</span><b>+${fmt(l[1])}</b></div>`).join('') +
+  $('resLines').innerHTML = lines.map(l => `<div><span>${l[0]}</span><b>${l[1] == null ? '✓' : '+' + fmt(l[1])}</b></div>`).join('') +
     (unlockedTier ? `<div><span style="color:#3fd8ff">🔓 ${TIERS[unlockedTier].name} unlocked for mission ${LV.label.split(' ')[0]}</span><span></span></div>` : '') +
     `<div class="total"><span>Total</span><span>★ ${fmt(total)}</span></div>`;
-  $('resQuip').textContent = unlockedTier ? `Every medal. I have prepared ${TIERS[unlockedTier].name}: same mission, nastier Legion, better pay.` : pick(success ? QUIPS.win : QUIPS.lose);
+  $('resQuip').textContent = run.newShip ? `I have finished assembling the ${run.newShip.name}. Select it in the hangar. I would test it myself, but, well.` : unlockedTier ? `Every medal. I have prepared ${TIERS[unlockedTier].name}: same mission, nastier Legion, better pay.` : pick(success ? QUIPS.win : QUIPS.lose);
   lastLevel = LV;
   const nextL = !LV.rush && !tier && success && L + 1 < NLEVELS ? L + 1 : null;
   $('resNext').textContent = unlockedTier ? `Fly ${TIERS[unlockedTier].name}` : nextL != null ? 'Next mission' : 'Mission board';
@@ -1082,7 +1386,8 @@ function buildMap() {
     for (let i = 0; i < LEVELS_PER; i++) {
       const L = s * LEVELS_PER + i, r = save.lv[L], ok = unlocked(L), bossL = i === LEVELS_PER - 1, top = ok ? topTier(L) : 0;
       const rows = TIERS.map((_, k) => `<div class="pips ${tierOpen(L, k) ? '' : 'dim'}">${Array.from({ length: tierMedalCount(k) }, (_, m) => `<i class="pip ${r?.t[k][m] ? 'on' : ''}"></i>`).join('')}</div>`).join('');
-      html += `<div class="lvl ${ok ? '' : 'locked'} ${r?.done ? 'done' : ''} ${bossL ? 'boss' : ''}" data-l="${ok ? L : ''}"><b>${s + 1}-${i + 1}</b><small class="mk">${bossL ? 'BOSS · ' : ''}${TIERS[top].name}</small><div class="tiers">${rows}</div></div>`;
+      const salv = TIERS.some((_, k) => { const pa = partAt(L, k); return pa && !hasPart(pa.ship, pa.idx); });
+      html += `<div class="lvl ${ok ? '' : 'locked'} ${r?.done ? 'done' : ''} ${bossL ? 'boss' : ''}" data-l="${ok ? L : ''}">${salv ? '<i class="pd" title="Ship part to find">🔩</i>' : ''}<b>${s + 1}-${i + 1}</b><small class="mk">${bossL ? 'BOSS · ' : ''}${TIERS[top].name}</small><div class="tiers">${rows}</div></div>`;
     }
     html += '</div>';
     const rOk = !!save.lv[s * LEVELS_PER + LEVELS_PER - 1]?.done;
@@ -1098,6 +1403,12 @@ function buildMap() {
   $('mapList').querySelectorAll('.rush').forEach(el => el.onclick = () => newRun(genRush(+el.dataset.r)));
 }
 
+function salvLine(L, k) {
+  const pa = partAt(L, k);
+  if (!pa) return '';
+  const S = shipById(pa.ship), h = hasPart(pa.ship, pa.idx);
+  return `<p class="salv">${h ? '✓' : '🔩'} Salvage crate: ${S.name} ${PART_NAMES[pa.idx]}${h ? ' (recovered)' : ''}</p>`;
+}
 function openTierSheet(L) {
   const s = Math.floor(L / LEVELS_PER), i = L % LEVELS_PER, r = rec(L);
   let html = `<h3>Mission ${s + 1}-${i + 1}</h3><div class="sub">${SECTORS[s].name}${i === LEVELS_PER - 1 ? ' · Boss: ' + SECTORS[s].boss : ''}</div>`;
@@ -1108,7 +1419,7 @@ function openTierSheet(L) {
     html += `<div class="tier ${open ? 'open' : 'locked'} ${done ? 'cleared' : ''}">
       <div class="tier-head"><b>${T.name}${done ? ' ✓' : ''}</b>${open ? `<button class="btn" data-t="${k}">Fly</button>` : '<span class="mk">🔒 LOCKED</span>'}</div>
       <p>${T.desc}${extra}${open ? '' : ` Earn every ${TIERS[k - 1].name} medal to unlock.`}</p>
-      <div class="tmedals">${medals}</div></div>`;
+      <div class="tmedals">${medals}</div>${salvLine(L, k)}</div>`;
   });
   html += `<button class="btn big" id="tierClose">Back</button>`;
   $('tierBody').innerHTML = html;
@@ -1117,14 +1428,35 @@ function openTierSheet(L) {
   $('tierClose').onclick = () => $('tierSheet').classList.add('hidden');
 }
 
+function buildFleet() {
+  return SHIPS.map(S => {
+    const own = shipOwned(S.id), sel = save.ship === S.id;
+    const got = S.id === 'ember' ? 4 : [0, 1, 2, 3].filter(i => hasPart(S.id, i)).length;
+    const mods = modList(S.mods).map(([t, good]) => `<span class="${good ? 'up' : 'down'}">${t}</span>`).join('') || '<span>Balanced baseline</span>';
+    const parts = S.id === 'ember' ? '' : `<div class="parts">${PART_NAMES.map((n, i) => {
+      const h = hasPart(S.id, i);
+      return `<span class="${h ? 'got' : ''}">${h ? '✓' : '🔩'} ${n} <small>${spotLabel(PART_SPOTS[S.id][i])}</small></span>`;
+    }).join('')}</div>`;
+    return `<div class="ship ${own ? '' : 'locked'} ${sel ? 'sel' : ''}"><img src="${shipIcon(S.id)}" alt="${S.name}">
+      <div class="info"><h4>${S.name}<small>${S.role}</small></h4><p>${own ? S.desc : 'Find all 4 parts in salvage crates on the missions listed below.'}</p><div class="mods">${mods}</div>${parts}</div>
+      <button class="btn small" data-ship="${S.id}" ${own && !sel ? '' : 'disabled'}>${sel ? 'Flying' : own ? 'Select' : got + '/4'}</button></div>`;
+  }).join('');
+}
+
 function buildHangar() {
-  $('upgList').innerHTML = UPG.map(u => {
+  $('upgList').innerHTML = `<h3 class="sect">Fleet</h3>${buildFleet()}<h3 class="sect">Upgrades <small>(every upgrade applies to every ship)</small></h3>` + UPG.map(u => {
     const l = ul(u.id), maxed = l >= u.max, c = upCost(u);
     return `<div class="upg"><h4>${u.name}</h4><div class="d">${u.desc}</div>
       <div class="fx">${u.fx(l)}${maxed ? '' : `  →  <span style="color:#fff">${u.fx(l + 1)}</span>`}</div>
       <div class="lvlbar">${Array.from({ length: u.max }, (_, i) => `<i class="${i < l ? 'on' : ''}"></i>`).join('')}</div>
       <div class="buy"><button class="btn small" data-u="${u.id}" ${maxed || save.stars < c ? 'disabled' : ''}>${maxed ? 'MAX' : 'Upgrade'}</button>${maxed ? '' : `<span>★ ${fmt(c)}</span>`}</div></div>`;
   }).join('');
+  $('upgList').querySelectorAll('[data-ship]').forEach(b => b.onclick = () => {
+    if (!shipOwned(b.dataset.ship)) return;
+    save.ship = b.dataset.ship; persist();
+    const top = $('upgList').scrollTop; buildHangar(); $('upgList').scrollTop = top;
+    $('hangarQuip').textContent = `${shipById(save.ship).name} prepped and fuelled. Your upgrades carry over.`;
+  });
   $('upgList').querySelectorAll('[data-u]').forEach(b => b.onclick = () => {
     const u = UPG.find(x => x.id === b.dataset.u), c = upCost(u);
     if (save.stars < c || ul(u.id) >= u.max) return;
@@ -1145,6 +1477,7 @@ function buildHowto() {
   <h4>🛟 Rescue survivors</h4><p>Hover over the SOS rafts for about a second. Every survivor you rescue pays stars.</p>
   <h4>📦 Supply caches</h4><p>Shoot the gold crates on the ground. They burst with stars and often hull repairs.</p>
   <h4>🎖️ Five medals per mission</h4><p>Destroy 70%, destroy 100%, rescue everyone, take no hull damage (your shield doesn't count), and collect 90% of the stars. Each medal pays once, and all five pay a jackpot.</p>
+  <h4>🛩️ Build new ships</h4><p>Missions marked 🔩 hide a blue salvage crate. Shoot it open and grab the part before it drifts away. Collect all 4 parts (Wings, Engine, Cockpit, Reactor) and Jarvis assembles a new ship for your Fleet. Each ship has its own strengths and trade-offs, and some parts only appear on Mk II or Mk III runs.</p>
   <h4>🔱 Mk II and Mk III tiers</h4><p>Earn every medal on a mission to unlock its next tier. It's the same mission with tougher drones, heavier fire, extra waves and bigger payouts. Each tier adds a new medal: Mk II asks for <b>no EMP used</b>, and Mk III also asks for a <b>30-kill chain</b>. That's 18 medals per mission.</p>
   <h4>✨ Star Rush stages</h4><p>Beat a sector boss to unlock its Star Rush: a bonus stage with no enemy fire and stars everywhere. Replay it as often as you like.</p>
   <h4>📅 Daily check-in</h4><p>Open the game every day for a growing bonus, up to 7 days.</p>
