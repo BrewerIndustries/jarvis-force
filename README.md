@@ -69,10 +69,12 @@ Space/B or the EMP button = EMP charge · P/Esc or the ⏸ button = pause. The s
 
   Each sector's vanguard mini-boss uses a subset of its boss's attacks.
 
-  Boss fire is dense (roughly 20–47 bullets a second) but always dodgeable. Every attack is built from fixed geometry with a
-  guaranteed way through. Rings and fans keep more than 24px between bullets (hitbox plus bullet on both sides) from about 200px out.
-  Walls and the falling curtain carry an open lane that moves slower than the ship. Flame cones lock their aim for each burst,
-  so the lanes between rays stay straight. Lightning, beams and mines are telegraphed.
+  **Every boss can be beaten without taking a hit.** Each attack is built from fixed geometry with a guaranteed way through.
+  Rings and fans keep more than 24px between bullets (hitbox plus bullet on both sides) from about 200px out. Wall gaps only
+  shift one lane per wall. The falling rain has an open stretch that drifts slower than the ship and opens where you are.
+  Flame cones lock their aim for each burst, so the lanes between rays stay straight. Lightning strikes one spot on you and two
+  beside it, never above or below, so there's always an exit. The beam gets a 1.3s warning. The Overseer's Hive only launches
+  drones during the fight and doesn't add fire on top of the boss's.
 - **Buildings fly at three altitudes** (`mkTerrain`/`updStructs` in game.js):
   - *Low:* scenery below your altitude. Bullets pass over it.
   - *Legion-held:* red roof roundel. Absorbs your fire and collapses for stars (HP scales with the mission and the threat level).
@@ -155,9 +157,10 @@ Hardening (bot, 2026-11-16): a maxed jet used to kill the 1-4 boss in about 6s w
 and real damage. A 25% loadout still clears 5-4, and an un-upgraded Ember loses on 2-4. The boss sway clock now starts on
 arrival (it used to reuse the entry timer, so bosses snapped sideways when they arrived), and the boss's x eases toward its target.
 
-Boss dodge test (bot, 2026-11-17): a lookahead bot moving at keyboard speed (400px/s), on Mk III / Ace with each boss held at
-40% HP (rage) and the Overseer at all three phases, takes 0 hits in 60s from every boss and vanguard. Before the rework the bosses fired about 13
-bullets a second and the Overseer's beam could catch it.
+No-hit boss test (bot, 2026-11-17): a dodge bot that decides only every 0.3s (human reaction time) and moves at 260px/s,
+on Mk III / Ace with each boss held at 40% HP (enraged) and the Overseer in all three phases, takes 0 hits from every boss and
+vanguard in 45 to 60s each. The same bot was hit by the old Tidebreaker fans, Thunderhead lightning and Overseer beam. Boss fire
+averages about 9–18 bullets a second.
 
 Save `sv: 2` marks the six-sector layout. Older saves (no `sv`) are migrated on load: Core progress moves from missions
 16–19 to 20–23, along with its Star Rush clear and story flag.

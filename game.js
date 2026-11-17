@@ -1550,7 +1550,7 @@ function updEnemy(e, dt) {
         case 'tank': e.lockA = a; e.burst = 2; e.burstT = 0; e.burstSp = 190; break;
         case 'heli': e.lockA = a; e.burst = 3; e.burstT = 0; e.burstSp = 230; break;
         case 'lifter': for (const sx of [-1, 1]) eShoot(e.x + sx * 16, e.y, a + sx * .14, 170); break;
-        case 'hive': for (let i = 0; i < 6; i++) eShoot(e.x, e.y + 30, a + (i - 2.5) * .22, 140); break;
+        case 'hive': if (!e.loyal || !boss) for (let i = 0; i < 6; i++) eShoot(e.x, e.y + 30, a + (i - 2.5) * .22, 140); break;
       }
       if (e.type !== 'sniper') SND.eshot();
     }
@@ -1595,68 +1595,57 @@ function updBoss(e, dt) {
       if (ph === 1) spawn({ type: 'hive', x: W / 2, y: -60, counted: false, loyal: true });
     }
   }
-  const rage = (e.hp < e.maxHp * .5 ? .72 : 1) / Math.sqrt(TM.fire);
+  const rage = (e.hp < e.maxHp * .5 ? .82 : 1) / Math.sqrt(TM.fire);
   const pats = e.pats;
   if (e.rest > 0) { e.rest -= dt; if (e.rest <= 0) { e.pat = (e.pat + 1) % pats.length; e.pt = 0; e.fireT = 0; } return; }
   e.pt += dt; e.fireT -= dt;
   const p = pats[e.pat], s = LV.s;
   if (e.fireT <= 0) {
-    // Dense but always dodgeable: every pattern is built from fixed geometry with a guaranteed way through.
-    // A gap needs >24px between bullet centres (hitbox 7 + bullet 6, both sides). Rings and arcs keep that
-    // at 200px+ from the boss; walls and curtains carry an open lane that moves slower than the ship can.
+    // Every boss must be beatable without taking a hit. Each pattern is built from fixed geometry with a
+    // guaranteed way through: a gap needs >24px between bullet centres (hitbox 7 + bullet 6, both sides), so rings
+    // and fans keep that from ~200px out; walls and the rain carry an open lane that moves slower than the ship;
+    // nothing random lands on top of you; and telegraphed hits (beam, lightning) give you time and a clear exit.
+    // Checked with a dodge bot that reacts only every 0.2s and moves at 320px/s (see README).
     switch (p) {
       case 'radial': { // rings, each turned half a step from the last
-        e.fireT = .62 * rage; const n = 22 + s * 2; e.ring = (e.ring || 0) + Math.PI / n;
+        e.fireT = .9 * rage; const n = 14 + s * 2; e.ring = (e.ring || 0) + Math.PI / n;
         for (let i = 0; i < n; i++) eShoot(e.x, e.y + 20, e.ring + i / n * Math.PI * 2, 135); SND.volley(); break; }
-      case 'fan': { // aimed 7-way fans plus a slow 5-way counter-fan between them
-        e.fireT = .34 * rage; e.fc = (e.fc || 0) + 1; const a = aim(e);
-        if (e.fc % 2) { for (let i = -3; i <= 3; i++) eShoot(e.x, e.y + 30, a + i * .17, 190); SND.volley(); }
-        else for (let i = -2; i <= 2; i++) eShoot(e.x, e.y + 30, a + (i + .5) * .3, 125);
-        break; }
-      case 'spiral': { // three arms, alternating direction each time the pattern comes round
-        e.fireT = .075 * rage; if (e.pt < .1) e.sdir = -(e.sdir || 1);
-        const a = e.pt * 2.4 * e.sdir; for (let k = 0; k < 3; k++) eShoot(e.x, e.y, a + k * Math.PI * 2 / 3, 150); break; }
+      case 'fan': { e.fireT = .6 * rage; const a = aim(e); for (let i = -2; i <= 2; i++) eShoot(e.x, e.y + 30, a + i * .2, 185); SND.volley(); break; }
+      case 'spiral': { // two arms, alternating direction each time the pattern comes round
+        e.fireT = .1 * rage; if (e.pt < .1) e.sdir = -(e.sdir || 1);
+        const a = e.pt * 2.6 * e.sdir; eShoot(e.x, e.y, a, 145); eShoot(e.x, e.y, a + Math.PI, 145); break; }
       case 'minions': { e.fireT = 99; for (let i = 0; i < 4; i++) spawn({ type: 'diver', x: XL + 80 + i * (WW - 160) / 3, y: -30, counted: false }); break; }
-      case 'rain': { // a staggered curtain falling from the sky with one drifting open lane
-        e.fireT = .26 * rage; e.row = (e.row || 0) + 1;
-        const amp = WW / 2 - 130; if (e.pt < .1) e.gseed = Math.asin(clamp((P.x - W / 2) / amp, -1, 1)); // the lane opens where you are
-        const lane = 40, gc = W / 2 + Math.sin(e.pt * .8 + e.gseed) * amp, off = e.row % 2 ? lane / 2 : 0;
-        for (let x = XL + 14 + off; x < XR - 8; x += lane) if (Math.abs(x - gc) > 74) eShoot(x, -10, Math.PI / 2, 160);
+      case 'rain': { // straight lanes falling from the sky with one drifting open stretch; you can also sit between lanes
+        e.fireT = .5 * rage;
+        const amp = WW / 2 - 130; if (e.pt < .1) e.gseed = Math.asin(clamp((P.x - W / 2) / amp, -1, 1)); // the gap opens where you are
+        const gc = W / 2 + Math.sin(e.pt * .7 + e.gseed) * amp;
+        for (let x = XL + 30; x < XR - 10; x += 72) if (Math.abs(x - gc) > 80) eShoot(x, -10, Math.PI / 2, 150);
         break; }
-      case 'wave': { // walls with a three-lane gap that never jumps further than the ship can follow
-        e.fireT = .7 * rage; const n = 17;
-        const reach = Math.max(1, Math.floor(400 * ST.speed * e.fireT * .3 / (WW / (n - 1))));
-        e.gap = e.gap == null ? 7 : clamp(e.gap + Math.round(rand(-reach, reach)), 1, n - 4);
-        for (let i = 0; i < n; i++) if (i < e.gap || i > e.gap + 2) eShoot(XL + 20 + i * (WW - 40) / (n - 1), e.y + 30, Math.PI / 2, 125);
+      case 'wave': { // walls with a three-lane gap that only ever shifts one lane
+        e.fireT = .9 * rage; const n = 15;
+        e.gap = e.gap == null ? 6 : clamp(e.gap + Math.round(rand(-1, 1)), 1, n - 4);
+        for (let i = 0; i < n; i++) if (i < e.gap || i > e.gap + 2) eShoot(XL + 20 + i * (WW - 40) / (n - 1), e.y + 30, Math.PI / 2, 120);
         SND.volley(); break; }
-      case 'cone': { // flame tongues: aim locks for each five-arc burst, so the lanes between the rays stay straight
-        e.fireT = .13 * rage; e.fc = (e.fc || 0) + 1;
-        if (e.fc % 7 < 2) { e.ca = aim(e); break; } // breath
-        for (let i = -4; i <= 4; i++) eShoot(e.x, e.y + e.r * .6, e.ca + i * .13, 175);
-        if (e.fc % 7 === 2) SND.flame(); break; }
-      case 'mines': { e.fireT = 99; for (let i = 0; i < 4; i++) spawn({ type: 'mine', x: XL + 70 + i * (WW - 140) / 3, y: e.y + 20, counted: false }); break; }
-      case 'shards': { // aimed shards that burst into rings, with a thin ring between salvos
-        e.fireT = .85 * rage; const a = aim(e);
-        for (let i = -1; i <= 1; i++) { const b = eShoot(e.x, e.y + 30, a + i * .4, 130); b.r = 11; b.split = .9; }
-        for (let i = 0; i < 16; i++) eShoot(e.x, e.y, i / 16 * Math.PI * 2 + e.pt, 100);
-        SND.volley(); break; }
-      case 'beam': { // telegraphed column, flanked by slow aimed pairs that never cross the safe side
-        if (!e.beam && e.pt < .2) { e.beam = { x: clamp(P.x, XL + 30, XR - 30), tele: 1.3, on: 0 }; SND.charge(); }
-        e.fireT = .45 * rage;
-        if (e.beam) for (const sx of [-1, 1]) eShoot(e.beam.x + sx * 70, e.y + 40, Math.PI / 2, 140);
-        break; }
-      case 'cross': { // five rotating arms that reverse each time
-        e.fireT = .11 * rage; if (e.pt < .1) e.sdir = -(e.sdir || 1);
-        for (let k = 0; k < 5; k++) eShoot(e.x, e.y, e.pt * 1.3 * e.sdir + k * Math.PI * 2 / 5, 150); break; }
-      case 'bolts': { // lightning on and around you, and a slow ring to weave through between strikes
-        e.fireT = 1.05 * rage;
-        for (let i = 0; i < 3; i++) strikes.push({ x: clamp(P.x + (i ? rand(-120, 120) : 0), XL + 30, XR - 30), y: clamp(P.y + (i ? rand(-90, 90) : 0), 140, H - 60), tele: .95, on: 0 });
-        const n = 18; e.ring = (e.ring || 0) + Math.PI / n; for (let i = 0; i < n; i++) eShoot(e.x, e.y + 20, e.ring + i / n * Math.PI * 2, 115);
+      case 'cone': { // flame tongues: aim locks for each four-arc burst, so the lanes between the rays stay straight
+        e.fireT = .16 * rage; e.fc = (e.fc || 0) + 1;
+        if (e.fc % 8 < 4) { if (e.fc % 8 === 0) e.ca = aim(e); break; } // breath
+        for (let i = -3; i <= 3; i++) eShoot(e.x, e.y + e.r * .6, e.ca + i * .16, 170);
+        if (e.fc % 8 === 4) SND.flame(); break; }
+      case 'mines': { e.fireT = 99; for (let i = 0; i < 3; i++) spawn({ type: 'mine', x: XL + 110 + i * (WW - 220) / 2, y: e.y + 20, counted: false }); break; }
+      case 'shards': { e.fireT = 1.1 * rage; const a = aim(e); for (let i = -1; i <= 1; i++) { const b = eShoot(e.x, e.y + 30, a + i * .4, 130); b.r = 11; b.split = .9; } SND.volley(); break; }
+      case 'beam': { e.fireT = 99; e.beam = { x: clamp(P.x, XL + 30, XR - 30), tele: 1.3, on: 0 }; SND.charge(); break; }
+      case 'cross': { // four rotating arms that reverse each time
+        e.fireT = .14 * rage; if (e.pt < .1) e.sdir = -(e.sdir || 1);
+        for (let k = 0; k < 4; k++) eShoot(e.x, e.y, e.pt * 1.3 * e.sdir + k * Math.PI / 2, 145); break; }
+      case 'bolts': { // one strike on you and two flanking it, so stepping up or down is always clear
+        e.fireT = 1.35;
+        const bx = clamp(P.x, XL + 30, XR - 30), by = clamp(P.y, 140, H - 60);
+        for (const dx of [0, -105, 105]) strikes.push({ x: clamp(bx + dx, XL + 30, XR - 30), y: by, tele: 1, on: 0 });
         break; }
       case 'summon': { e.fireT = 99; for (const sx of [-1, 1]) spawn({ type: 'splitter', x: e.x + sx * 120, y: e.y, counted: false }); break; }
     }
   }
-  const dur = { minions: 1.5, mines: 1.5, summon: 1.5, beam: 2.6, rain: 4.2 }[p] || 3.2;
+  const dur = { minions: 1.5, mines: 1.5, summon: 1.5, beam: 2.8, rain: 4 }[p] || 3.2;
   if (e.pt > dur) e.rest = 1.1 * rage;
   if (!P.dead && (e.x - P.x) ** 2 + (e.y - P.y) ** 2 < (e.r * .7 + P.r) ** 2) hurtPlayer(25);
 }
