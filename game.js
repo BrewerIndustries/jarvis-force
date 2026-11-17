@@ -472,7 +472,8 @@ function newRun(level) {
   LV.tl = LV.tl.slice();
   seedBg();
   banner = { a: LV.rush ? 'STAR RUSH' : `MISSION ${LV.label}`, b: LV.rush ? 'Grab everything that glitters' : LV.name, t: 3 };
-  state = 'play'; paused = false; showScreen(null);
+  state = 'play'; paused = false; showScreen(null); SND.duck(false);
+  SND.music(LV.rush ? 'rush' : 'mission', LV.rush ? 900 + LV.s : LV.L * 7919 + 3, [0, -2, 2, -1, 1, -3][LV.s]); // Bb, Ab, C, A, B, G
   if (TH.hp > 1.4 || TH.dmg > 1.3) setTimeout(() => toast(`⚠️ Legion threat ×${TH.hp.toFixed(1)}: they have up-armoured against your loadout${TH.dmg > 1.1 ? ` and load heavier rounds (×${TH.dmg.toFixed(1)})` : ''}.`), 1200);
 }
 
@@ -963,7 +964,7 @@ function updStorm(dt) {
     storm.next = rand(2.5, 6.5);
     const m = terrain.filter(o => o.k === 'mast' && o.top && o.y > 80 && o.y < H - 80);
     const [x, y] = m.length && Math.random() < .6 ? m[0].top : [camX + rand(40, W - 40), rand(H * .25, H * .8)];
-    storm.bolt = { pts: boltPath(x + rand(-80, 80), -20, x, y), t: .28 }; storm.light = 1;
+    storm.bolt = { pts: boltPath(x + rand(-80, 80), -20, x, y), t: .28 }; storm.light = 1; if (state === 'play') SND.thunder();
   }
 }
 function updStrikes(dt) {
@@ -971,7 +972,7 @@ function updStrikes(dt) {
     if (s.tele > 0) {
       s.tele -= dt;
       if (s.tele <= 0) {
-        s.on = .25; shake = Math.max(shake, 5); storm.light = Math.max(storm.light, .7);
+        s.on = .25; shake = Math.max(shake, 5); storm.light = Math.max(storm.light, .7); SND.strike();
         s.pts = boltPath(s.x + rand(-60, 60), -20, s.x, s.y);
         if (!P.dead && (P.x - s.x) ** 2 + (P.y - s.y) ** 2 < 40 * 40) hurtPlayer(22);
       }
@@ -1075,6 +1076,7 @@ function spawnBoss() {
     phases: major && cfg.phases ? cfg.phases : null, pats: major ? (cfg.phases ? cfg.phases[0] : cfg.pats) : VANGUARD_PATS[LV.s], beam: null };
   enemies.push(boss);
   banner = { a: 'WARNING', b: boss.name + ' INBOUND', t: 3, warn: true };
+  SND.warn(); SND.music('boss', LV.L * 13 + 7, [0, -2, 2, -1, 1, -3][LV.s]);
 }
 
 /* ------------------------------ COMBAT ------------------------------ */
@@ -1092,12 +1094,13 @@ function hurtEnemy(e, d, silent) {
   if (Math.random() < ST.crit) { d *= 2; if (!silent && Math.random() < .3) texts.push({ x: e.x + rand(-10, 10), y: e.y - 10, s: 'CRIT', c: '#ffd34d', t: .5, sz: 14 }); }
   if (ST.od) d *= 1 + ST.od * Math.min(run.combo, 40) / 40;
   e.hp -= d; e.flash = .06;
-  if (e.hp <= 0) killEnemy(e);
+  if (e.hp <= 0) killEnemy(e); else if (!silent) SND.hit();
 }
 
 function killEnemy(e) {
   e.dead = true;
   boom(e.x, e.y, e.r);
+  if (e.boss) SND.bigBoom(); else if (e.type === 'cache') SND.cache(); else SND.boom(e.r);
   if (e.type === 'cache') {
     dropStars(e.x, e.y, Math.round((25 + LV.L * 7) * TM.stars) * (LV.rush ? 2 : 1));
     if (Math.random() < .5) pickups.push({ kind: 'hp', x: e.x, y: e.y, vx: rand(-40, 40), vy: -80, t: 0 });
@@ -1144,28 +1147,28 @@ function comboMult() { return 1 + Math.min(run.combo, 60) / 30; }
 function hurtPlayer(d) {
   if (P.inv > 0 || P.dead || run.endT > 0) return;
   if (P.bar) { // First Strike barrier eats the whole hit, then restores later
-    P.bar = false; P.barT = ST.barrier; P.inv = .6; sparks(P.x, P.y, '#ffe08a', 14);
+    P.bar = false; P.barT = ST.barrier; P.inv = .6; sparks(P.x, P.y, '#ffe08a', 14); SND.barrier();
     texts.push({ x: P.x, y: P.y - 44, s: 'FIRST STRIKE BLOCKED', c: '#ffe08a', t: 1, sz: 14 });
     return;
   }
   d *= DIFFS[save.diff].dmg * TM.dmg * TH.dmg * (1 - ST.armor);
   P.shDelay = 3;
   if (P.shield > 0) { const a = Math.min(P.shield, d); P.shield -= a; d -= a; }
-  if (d > 0) { P.hp -= d; run.damaged = true; P.inv = .9 * ST.invMul; shake = 9; sparks(P.x, P.y, '#ff6a4a', 12); }
-  else { P.inv = .35; sparks(P.x, P.y, '#6fe3ff', 8); }
+  if (d > 0) { P.hp -= d; run.damaged = true; P.inv = .9 * ST.invMul; shake = 9; sparks(P.x, P.y, '#ff6a4a', 12); SND.hurt(); }
+  else { P.inv = .35; sparks(P.x, P.y, '#6fe3ff', 8); SND.shield(); }
   if (P.hp <= 0) {
     if (ST.revive && !P.revived) {
-      P.revived = true; P.hp = ST.maxHp * .5; P.inv = 2.5; eb = []; flash = .5;
+      P.revived = true; P.hp = ST.maxHp * .5; P.inv = 2.5; eb = []; flash = .5; SND.revive();
       texts.push({ x: camX + W / 2, y: H / 2, s: 'EJECTION PROTOCOL — JARVIS HAS YOU', c: '#6fe3ff', t: 2, sz: 18 });
     } else {
-      P.dead = true; run.failed = true; run.failT = 2; boom(P.x, P.y, 40); shake = 16;
+      P.dead = true; run.failed = true; run.failT = 2; boom(P.x, P.y, 40); shake = 16; SND.bigBoom();
     }
   }
 }
 
 function useBomb() {
   if (state !== 'play' || paused || run.bombs <= 0 || P.dead || run.endT > 0) return;
-  run.bombs--; run.usedBomb = true; flash = .7; shake = 10;
+  run.bombs--; run.usedBomb = true; flash = .7; shake = 10; SND.emp();
   eb.forEach(b => sparks(b.x, b.y, '#9ff', 1));
   eb = [];
   const d = 160 * (1 + LV.L * .3);
@@ -1288,9 +1291,9 @@ function update(dt) {
       p.dead = true;
       if (p.kind === 'star') {
         const val = p.v * ST.fortune * DIFFS[save.diff].stars * comboMult();
-        run.stars += val; run.baseCollected += p.v;
-      } else if (p.kind === 'part') collectPart(p);
-      else { P.hp = Math.min(ST.maxHp, P.hp + 25); texts.push({ x: P.x, y: P.y - 30, s: '+25 HULL', c: '#4cdf8a', t: .8, sz: 15 }); }
+        run.stars += val; run.baseCollected += p.v; SND.star(run.combo);
+      } else if (p.kind === 'part') { collectPart(p); SND.part(); }
+      else { SND.heal(); P.hp = Math.min(ST.maxHp, P.hp + 25); texts.push({ x: P.x, y: P.y - 30, s: '+25 HULL', c: '#4cdf8a', t: .8, sz: 15 }); }
     } else if (p.y > H + 30) p.dead = true;
   }
   pickups = pickups.filter(p => !p.dead);
@@ -1329,20 +1332,21 @@ function fireWeapons(dt) {
     P.fireT = ST.fireInt;
     const n = ST.streams;
     for (let i = 0; i < n; i++) { const o = (i - (n - 1) / 2); addPB(P.x + o * 11, P.y - 24, o * 40, -950, ST.dmg, 5, 'b'); }
+    SND.shot();
     P.wingT ^= 1;
     if (ST.wings && P.wingT) { addPB(P.x - 18, P.y - 4, -170, -860, ST.wdmg, 4, 'w'); addPB(P.x + 18, P.y - 4, 170, -860, ST.wdmg, 4, 'w'); }
   }
   if (ST.mis) {
     P.misT -= dt;
-    if (P.misT <= 0) { P.misT = ST.misInt; addPB(P.x - 16, P.y, -180, -120, ST.mdmg, 6, 'm'); addPB(P.x + 16, P.y, 180, -120, ST.mdmg, 6, 'm'); }
+    if (P.misT <= 0) { P.misT = ST.misInt; SND.missile(); addPB(P.x - 16, P.y, -180, -120, ST.mdmg, 6, 'm'); addPB(P.x + 16, P.y, 180, -120, ST.mdmg, 6, 'm'); }
   }
   if (ST.las) {
     if (P.lasOn > 0) P.lasOn -= dt;
-    else { P.lasT -= dt; if (P.lasT <= 0) { P.lasOn = 1.7; P.lasT = ST.lasInt; } }
+    else { P.lasT -= dt; if (P.lasT <= 0) { P.lasOn = 1.7; P.lasT = ST.lasInt; SND.laser(); } }
   }
   if (ST.flak) {
     P.flakT -= dt;
-    if (P.flakT <= 0) { P.flakT = ST.flakInt; for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2 + gameT; pb.push({ x: P.x, y: P.y, vx: Math.cos(a) * 520, vy: Math.sin(a) * 520, dmg: ST.fdmg, r: 5, kind: 'f', life: .42 }); } }
+    if (P.flakT <= 0) { P.flakT = ST.flakInt; SND.flak(); for (let i = 0; i < 12; i++) { const a = i / 12 * Math.PI * 2 + gameT; pb.push({ x: P.x, y: P.y, vx: Math.cos(a) * 520, vy: Math.sin(a) * 520, dmg: ST.fdmg, r: 5, kind: 'f', life: .42 }); } }
   }
   if (ST.drones) {
     P.droT -= dt;
@@ -1352,7 +1356,7 @@ function fireWeapons(dt) {
 function zap(src) { // Tesla Coil: arc to the 3 nearest drones within reach
   const near = enemies.filter(o => o !== src && !o.dead && !o.neutral && !o.nohit && o.y > 0 && dist2(o, src) < 170 * 170)
     .sort((a, b) => dist2(a, src) - dist2(b, src)).slice(0, 3);
-  let from = src;
+  let from = src; if (near.length) SND.zap();
   for (const o of near) { parts.push({ zap: true, x: from.x, y: from.y, x2: o.x, y2: o.y, t: .16, max: .16 }); hurtEnemy(o, ST.tdmg, true); from = o; }
 }
 function dronePos() {
@@ -1419,7 +1423,7 @@ function updEnemy(e, dt) {
   if (e.burst > 0) { e.burstT -= dt; if (e.burstT <= 0) { e.burstT = e.type === 'tank' ? .18 : e.type === 'heli' ? .13 : .09; e.burst--; eShoot(e.x, e.y + 10, e.lockA, e.burstSp || 330); } }
   // mines arm when you get close, then burst
   if (e.type === 'mine' && !P.dead) {
-    if (e.arm < 0 && Math.hypot(P.x - e.x, P.y - e.y) < 85) e.arm = .7;
+    if (e.arm < 0 && Math.hypot(P.x - e.x, P.y - e.y) < 85) { e.arm = .7; SND.mine(); }
     if (e.arm >= 0) {
       e.arm -= dt;
       if (e.arm <= 0) {
@@ -1441,7 +1445,7 @@ function updEnemy(e, dt) {
         case 'gunship': for (let i = -1; i <= 1; i++) eShoot(e.x, e.y + 20, a + i * .22, 180); break;
         case 'bomber': eShoot(e.x, e.y + 12, Math.PI / 2, 160); break;
         case 'carrier': for (let i = 0; i < 10; i++) eShoot(e.x, e.y, i / 10 * Math.PI * 2 + e.t, 150); break;
-        case 'sniper': e.aiming = .9; e.lockA = a; e.burstSp = 330; break;
+        case 'sniper': e.aiming = .9; e.lockA = a; e.burstSp = 330; SND.aim(); break;
         case 'tank': e.lockA = a; e.burst = 2; e.burstT = 0; e.burstSp = 190; break;
         case 'heli': e.lockA = a; e.burst = 3; e.burstT = 0; e.burstSp = 230; break;
         case 'lifter': for (const sx of [-1, 1]) eShoot(e.x + sx * 16, e.y, a + sx * .14, 170); break;
@@ -1455,7 +1459,7 @@ function updEnemy(e, dt) {
     if (near) {
       e.prog += dt / 1.1 * ST.rescue;
       if (e.prog >= 1) {
-        e.dead = true; run.rescued++; save.stats.rescues++;
+        e.dead = true; run.rescued++; save.stats.rescues++; SND.rescue();
         const v = Math.round((30 + LV.L * 6) * DIFFS[save.diff].stars * TM.stars * ST.rescueStars);
         run.stars += v; run.rescueStars += v;
         texts.push({ x: e.x, y: e.y - 24, s: `SURVIVOR RESCUED +${v}★`, c: '#4cdf8a', t: 1.4, sz: 16 });
@@ -1474,7 +1478,7 @@ function updBoss(e, dt) {
   e.spin += dt;
   if (e.beam) { // telegraph, then a column of light down from the boss
     const b = e.beam;
-    if (b.tele > 0) { b.tele -= dt; if (b.tele <= 0) { b.on = .9; shake = 6; } }
+    if (b.tele > 0) { b.tele -= dt; if (b.tele <= 0) { b.on = .9; shake = 6; SND.strike(); } }
     else if (b.on > 0) { b.on -= dt; if (b.on <= 0) e.beam = null; }
   }
   if (e.y < 190) { e.y += 90 * dt; return; }
@@ -1485,7 +1489,7 @@ function updBoss(e, dt) {
     const ph = e.hp < e.maxHp / 3 ? 2 : e.hp < e.maxHp * 2 / 3 ? 1 : 0;
     if (ph !== e.phase) {
       e.phase = ph; e.pats = e.phases[ph]; e.pat = -1; e.rest = 1.2; e.beam = null; eb = []; flash = .4; shake = 12;
-      banner = { a: `PHASE ${ph + 1}`, b: ph === 2 ? 'The Overseer is desperate' : 'The Overseer adapts', t: 2.2, warn: true };
+      SND.warn(); banner = { a: `PHASE ${ph + 1}`, b: ph === 2 ? 'The Overseer is desperate' : 'The Overseer adapts', t: 2.2, warn: true };
       if (ph === 1) spawn({ type: 'hive', x: W / 2, y: -60, counted: false, loyal: true });
     }
   }
@@ -1505,7 +1509,7 @@ function updBoss(e, dt) {
       case 'cone': { e.fireT = .07 * rage; eShoot(e.x, e.y + e.r * .6, aim(e) + rand(-.4, .4), rand(190, 250)); break; }
       case 'mines': { e.fireT = 99; for (let i = 0; i < 4; i++) spawn({ type: 'mine', x: XL + 70 + i * (WW - 140) / 3, y: e.y + 20, counted: false }); break; }
       case 'shards': { e.fireT = 1.0 * rage; const a = aim(e); for (let i = -1; i <= 1; i++) { const b = eShoot(e.x, e.y + 30, a + i * .35, 130); b.r = 11; b.split = .9; } break; }
-      case 'beam': { e.fireT = 99; e.beam = { x: clamp(P.x, XL + 30, XR - 30), tele: 1.1, on: 0 }; break; }
+      case 'beam': { e.fireT = 99; e.beam = { x: clamp(P.x, XL + 30, XR - 30), tele: 1.1, on: 0 }; SND.charge(); break; }
       case 'cross': { e.fireT = .13 * rage; for (let k = 0; k < 4; k++) eShoot(e.x, e.y, e.pt * 1.5 + k * Math.PI / 2, 150); break; }
       case 'bolts': { e.fireT = 1.05 * rage; for (let i = 0; i < 3; i++) strikes.push({ x: clamp(P.x + (i ? rand(-120, 120) : 0), XL + 30, XR - 30), y: clamp(P.y + (i ? rand(-90, 90) : 0), 140, H - 60), tele: .95, on: 0 }); break; }
       case 'summon': { e.fireT = 99; for (const sx of [-1, 1]) spawn({ type: 'splitter', x: e.x + sx * 120, y: e.y, counted: false }); break; }
@@ -1963,6 +1967,7 @@ const MEDALS = [
 let lastLevel = null;
 function finishLevel(success) {
   run.done = true;
+  SND.stopMusic(); setTimeout(() => success ? SND.win() : SND.lose(), 350);
   const lines = [], L = LV.L, tier = LV.tier || 0, nM = tierMedalCount(tier);
   const collected = Math.round(run.stars - run.rescueStars);
   lines.push(['Stars collected', collected]);
@@ -2034,6 +2039,7 @@ function go(id) {
   if (id === 'briefing') { showStory('INCOMING TRANSMISSION', STORY.intro, () => go('menu')); return; }
   state = id; curSector = id === 'map' ? curSector : curSector;
   refreshStars();
+  if (['menu', 'map', 'hangar', 'fleet', 'ach', 'howto'].includes(id)) { SND.duck(false); SND.music('menu', 1776, 0); }
   if (id === 'menu') $('menuQuip').textContent = pick(QUIPS.menu);
   if (id === 'map') buildMap();
   if (id === 'hangar') { $('hangarQuip').textContent = pick(QUIPS.hangar); buildHangar(); }
@@ -2168,7 +2174,7 @@ function buildHangar() {
   $('upgList').querySelectorAll('[data-u]').forEach(b => b.onclick = () => {
     const u = UPG.find(x => x.id === b.dataset.u), c = upCost(u);
     if (save.stars < c || ul(u.id) >= u.max) return;
-    save.stars -= c; save.up[u.id] = ul(u.id) + 1; persist(); checkAch();
+    save.stars -= c; save.up[u.id] = ul(u.id) + 1; persist(); checkAch(); SND.buy();
     const top = $('upgList').scrollTop; buildHangar(); $('upgList').scrollTop = top; refreshStars();
     $('hangarQuip').textContent = `${u.name} upgraded. ${pick(['Lovely.', 'She purrs.', 'Calibrated.', 'Installed, tested, polished.', 'I am rather proud of that one.'])}`;
   });
@@ -2213,16 +2219,30 @@ function daily() {
 /* ------------------------------ PAUSE ------------------------------ */
 function pauseGame() {
   if (state !== 'play' || run.done) return;
-  paused = true; state = 'pause';
+  paused = true; state = 'pause'; SND.duck(true);
   $('pauseInfo').textContent = `${LV.rush ? LV.name : 'Mission ' + LV.label}. Stars so far: ${fmt(run.stars)}. Take your time. I am in no hurry. I am software.`;
   showScreen('pause');
 }
-$('pResume').onclick = () => { paused = false; state = 'play'; showScreen(null); };
+$('pResume').onclick = () => { paused = false; state = 'play'; showScreen(null); SND.duck(false); };
 $('pQuit').onclick = () => { paused = false; state = 'play'; finishLevel(false); };
 addEventListener('blur', pauseGame);
 document.addEventListener('visibilitychange', () => { if (document.hidden) pauseGame(); });
 
 /* ------------------------------ INPUT ------------------------------ */
+// audio: browsers only allow sound after a real gesture, so the first tap or key starts it
+addEventListener('pointerdown', () => SND.unlock(), true);
+addEventListener('keydown', () => SND.unlock(), true);
+document.addEventListener('click', e => { if (e.target.closest('.btn')) SND.click(); });
+function audioLabels() {
+  document.querySelectorAll('[data-snd]').forEach(b => {
+    const on = SND.opts[b.dataset.snd];
+    b.textContent = (b.dataset.snd === 'music' ? '♫ Music: ' : '🔊 Sound: ') + (on ? 'On' : 'Off');
+    b.classList.toggle('off', !on);
+  });
+}
+document.querySelectorAll('[data-snd]').forEach(b => b.addEventListener('click', () => { SND.toggle(b.dataset.snd); audioLabels(); }));
+audioLabels();
+
 addEventListener('keydown', e => {
   keys[e.code] = true;
   if (e.code === 'Space' || e.code === 'KeyB') { useBomb(); e.preventDefault(); }

@@ -100,10 +100,24 @@ Everything is procedural Canvas 2D with a pseudo-3D look:
   stretched across the wider world (`widen()`), and clouds slide slightly faster than the ground for parallax.
 - Each biome adds weather (embers, snow, pollen or data motes), and the world sits under a vignette.
 
+### Audio
+`audio.js` synthesises everything with WebAudio. There are no sound files.
+- **Music** is a procedurally composed military-band march. A brass melody (it opens with a bugle-call figure) and
+  horn harmony play over an oom-pah tuba, offbeat brass stabs, a snare corps with ruffs and phrase-end rolls, bass
+  drum, crash cymbals and a piccolo on alternate passes, all through a small hall reverb. Each mission seeds its own
+  tune, and the key is set by sector. Bosses get a faster minor-key battle march, Star Rush gets a quicker march, and the menus play a slow anthem.
+  The music ducks while paused, and brass jingles play on mission complete and failed.
+- **Sound effects** cover guns, missiles, the laser, flak, tesla arcs, hits, explosions, shield and barrier blocks, EMP,
+  star pickups (pitch rises with the kill chain), rescues, parts, the boss warning siren, sniper aim beeps, mine arming,
+  beam and lightning strikes, and storm thunder. Rapid sounds are rate-limited.
+- Music and Sound toggles sit on the main menu and the pause screen and are saved in localStorage (`jarvisforce.audio`).
+  Audio starts on the first tap or key press, as browsers require.
+
 ## Code layout
 
 - `index.html`: DOM screens (menu, mission board, hangar, commendations, story comms, results, pause)
 - `style.css`: UI styling
+- `audio.js`: synthesised sound effects and the procedural march (`SND`)
 - `game.js`: everything else: save (localStorage key `jarvisforce.save.v1`), upgrade/stat tables, seeded
   level generator (`genLevel`, `genRush`), entities and bosses, rendering (all procedural vector art, no assets),
   results/medals, story text, and Jarvis quips.
