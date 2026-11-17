@@ -36,11 +36,16 @@ const SND = (() => {
     return ctx;
   }
   function catchUp() { if (want && live() && (!song || song.id !== want.id)) startSong(); if (ambWant && !amb && live()) ambience(ambWant); }
+  // iOS only lets audio start from a real tap (touchend/click, not pointerdown), can leave the context
+  // 'interrupted' after a call or app switch, and mutes WebAudio with the silent switch unless the page
+  // declares itself a playback app. So: retry on every gesture, resume from any non-running state.
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch (e) {}
   function unlock() {
     const c = ensure(); if (!c) return;
     if (!unlocked) unlocked = true;
-    if (c.state === 'suspended') c.resume().then(catchUp); else catchUp();
+    if (c.state !== 'running') c.resume().then(catchUp, () => {}); else catchUp();
   }
+  for (const ev of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown']) addEventListener(ev, unlock, true);
   const live = () => ctx && unlocked && ctx.state === 'running';
   const lastT = {};
   function throttle(k, ms) { const n = performance.now(); if (n - (lastT[k] || 0) < ms) return false; lastT[k] = n; return true; }
@@ -238,7 +243,7 @@ const SND = (() => {
   }
   function stopMusic() { want = null; clearTimeout(fadeTimer); if (!ctx) return; ramp(0, .5); fadeTimer = setTimeout(() => { clearInterval(timer); song = null; }, 520); }
   function duck(on) { ducked = on; if (song) ramp(musTarget(), .25); }
-  document.addEventListener('visibilitychange', () => { if (!ctx || !unlocked) return; document.hidden ? ctx.suspend() : ctx.resume().then(catchUp); });
+  document.addEventListener('visibilitychange', () => { if (!ctx || !unlocked) return; document.hidden ? ctx.suspend() : ctx.resume().then(catchUp, () => {}); });
 
   // looping weather bed (rain on the Stormfront)
   let amb = null, ambWant = null;

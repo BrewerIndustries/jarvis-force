@@ -2362,8 +2362,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) pause
 
 /* ------------------------------ INPUT ------------------------------ */
 // audio: browsers only allow sound after a real gesture, so the first tap or key starts it
-addEventListener('pointerdown', () => SND.unlock(), true);
-addEventListener('keydown', () => SND.unlock(), true);
+// audio unlock listeners live in audio.js
 document.addEventListener('click', e => { if (e.target.closest('.btn')) SND.click(); });
 function audioLabels() {
   document.querySelectorAll('[data-snd]').forEach(b => {

@@ -129,7 +129,8 @@ Everything is procedural Canvas 2D with a pseudo-3D look:
   tower collisions, a low-hull alarm, a take-off whoosh, and a chime for each medal on the results screen.
   The Stormfront adds a looping rain bed. Rapid sounds are rate-limited.
 - Music and Sound toggles sit on the main menu and the pause screen and are saved in localStorage (`jarvisforce.audio`).
-  Audio starts on the first tap or key press, as browsers require.
+  Audio starts on the first tap or key press, as browsers require. On iPhone it unlocks on touchend/click (pointerdown doesn't
+  count as a tap there), resumes after calls or app switches, and asks to play even with the silent switch on (`navigator.audioSession`).
 
 ## Code layout
 
