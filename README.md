@@ -68,6 +68,19 @@ Space/B or the EMP button = EMP charge · P/Esc or the ⏸ button = pause. The s
   - Overseer (3 phases, with a Hive at phase 2)
 
   Each sector's vanguard mini-boss uses a subset of its boss's attacks.
+
+  Boss fire is dense (roughly 20–47 bullets a second) but always dodgeable. Every attack is built from fixed geometry with a
+  guaranteed way through. Rings and fans keep more than 24px between bullets (hitbox plus bullet on both sides) from about 200px out.
+  Walls and the falling curtain carry an open lane that moves slower than the ship. Flame cones lock their aim for each burst,
+  so the lanes between rays stay straight. Lightning, beams and mines are telegraphed.
+- **Buildings fly at three altitudes** (`mkTerrain`/`updStructs` in game.js):
+  - *Low:* scenery below your altitude. Bullets pass over it.
+  - *Legion-held:* red roof roundel. Absorbs your fire and collapses for stars (HP scales with the mission and the threat level).
+  - *Towers:* very tall, with a yellow hazard edge and a blinking red beacon. They are indestructible and block shots both ways,
+    so they work as cover. Clipping one costs hull and shoves you aside. Towers stop spawning about 22s before the boss, so
+    boss arenas stay clear.
+
+  Every sector has buildings: drowned tower blocks, Legion outposts in the peaks, sea rigs, city blocks, moorland farms and Core blocks.
 - **6 Star Rush bonus stages** (one per sector, unlocked by beating its boss). No enemy fire, stars everywhere.
 - **20 upgrades** in Jarvis's hangar: Pulse Cannon, Autoloader, Wing Guns, Seeker Missiles, Arc Lance (beam),
   Wingman Drones, Hull Plating, Deflector shield, Repair Nanites, EMP Charges, Star Magnet, Salvage Scanner
@@ -106,10 +119,13 @@ Everything is procedural Canvas 2D with a pseudo-3D look:
   horn harmony play over an oom-pah tuba, offbeat brass stabs, a snare corps with ruffs and phrase-end rolls, bass
   drum, crash cymbals and a piccolo on alternate passes, all through a small hall reverb. Each mission seeds its own
   tune, and the key is set by sector. Bosses get a faster minor-key battle march, Star Rush gets a quicker march, and the menus play a slow anthem.
-  The music ducks while paused, and brass jingles play on mission complete and failed.
+  The music sits under the effects (bus gain 0.2), ducks while paused, and brass jingles play on mission complete and failed.
 - **Sound effects** cover guns, missiles, the laser, flak, tesla arcs, hits, explosions, shield and barrier blocks, EMP,
   star pickups (pitch rises with the kill chain), rescues, parts, the boss warning siren, sniper aim beeps, mine arming,
-  beam and lightning strikes, and storm thunder. Rapid sounds are rate-limited.
+  beam and lightning strikes, and storm thunder. They also cover enemy fire and boss volleys, flame breath, sniper cracks,
+  helicopter rotors, bomber flybys, Hive launches, splitters breaking, elite arrivals, buildings collapsing, ricochets off towers,
+  tower collisions, a low-hull alarm, a take-off whoosh, and a chime for each medal on the results screen.
+  The Stormfront adds a looping rain bed. Rapid sounds are rate-limited.
 - Music and Sound toggles sit on the main menu and the pause screen and are saved in localStorage (`jarvisforce.audio`).
   Audio starts on the first tap or key press, as browsers require.
 
@@ -138,6 +154,10 @@ about 1.5–2× the enemies and roughly 4× the stars of Mk I.
 Hardening (bot, 2026-11-16): a maxed jet used to kill the 1-4 boss in about 6s without taking damage. It now takes about 16s
 and real damage. A 25% loadout still clears 5-4, and an un-upgraded Ember loses on 2-4. The boss sway clock now starts on
 arrival (it used to reuse the entry timer, so bosses snapped sideways when they arrived), and the boss's x eases toward its target.
+
+Boss dodge test (bot, 2026-11-17): a lookahead bot moving at keyboard speed (400px/s), on Mk III / Ace with each boss held at
+40% HP (rage) and the Overseer at all three phases, takes 0 hits in 60s from every boss and vanguard. Before the rework the bosses fired about 13
+bullets a second and the Overseer's beam could catch it.
 
 Save `sv: 2` marks the six-sector layout. Older saves (no `sv`) are migrated on load: Core progress moves from missions
 16–19 to 20–23, along with its Star Rush clear and story flag.

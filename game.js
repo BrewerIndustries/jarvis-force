@@ -474,6 +474,7 @@ function newRun(level) {
   banner = { a: LV.rush ? 'STAR RUSH' : `MISSION ${LV.label}`, b: LV.rush ? 'Grab everything that glitters' : LV.name, t: 3 };
   state = 'play'; paused = false; showScreen(null); SND.duck(false);
   SND.music(LV.rush ? 'rush' : 'mission', LV.rush ? 900 + LV.s : LV.L * 7919 + 3, [0, -2, 2, -1, 1, -3][LV.s]); // Bb, Ab, C, A, B, G
+  SND.takeoff(); SND.ambience(BIOMES[LV.s] === 'storm' ? 'rain' : null);
   if (TH.hp > 1.4 || TH.dmg > 1.3) setTimeout(() => toast(`⚠️ Legion threat ×${TH.hp.toFixed(1)}: they have up-armoured against your loadout${TH.dmg > 1.1 ? ` and load heavier rounds (×${TH.dmg.toFixed(1)})` : ''}.`), 1200);
 }
 
@@ -518,11 +519,11 @@ function mkBlob(r, n, jit) { const pts = []; for (let i = 0; i < n; i++) { const
 const rectPts = (w, d) => [[-w / 2, -d / 2], [w / 2, -d / 2], [w / 2, d / 2], [-w / 2, d / 2]];
 function canopy(n, r) { const c = []; for (let i = 0; i < n; i++) c.push([rand(-r, r), rand(-r, r), r * rand(.45, .75)]); return c; }
 
-function mkTerrain(y) {
+function mkTerrain0(y) {
   const b = BIOMES[curSector], v = bgVar, x = XL + Math.random() * WW;
   switch (b) {
     case 'isles': {
-      if (Math.random() < .2 + v * .05) { // drowned tower block standing out of the sea
+      if (Math.random() < .3 + v * .05) { // drowned tower block standing out of the sea
         const w = rand(34, 60), d = rand(34, 60);
         return { k: 'sunk', x, y, pts: rectPts(w, d), h: rand(40, 110), ext: 140, gap: rand(150, 230) };
       }
@@ -532,6 +533,7 @@ function mkTerrain(y) {
       return { k: 'isle', x, y, r, pts: mkBlob(r, 18, .45), ruins, palms, ext: r + 60, gap: rand(230, 380) };
     }
     case 'peaks': {
+      if (Math.random() < .26) return { k: 'post', x, y, pts: rectPts(rand(34, 52), rand(28, 42)), h: rand(24, 40), ext: 140, gap: rand(130, 200) }; // Legion outpost
       if (Math.random() < .28) { // lava river
         const pts = []; let px = 0; for (let i = 0; i <= 8; i++) { pts.push([px, -i * 55]); px += rand(-40, 40); }
         return { k: 'lava', x, y: y + 200, pts, ext: 480, gap: rand(60, 120), layer: 0 };
@@ -541,7 +543,7 @@ function mkTerrain(y) {
     }
     case 'seas': {
       const q = Math.random();
-      if (q < .18) { const w = rand(70, 100); return { k: 'rig', x, y, pts: rectPts(w, w * .8), h: rand(60, 90), ext: 200, gap: rand(260, 380), ph: Math.random() * 6 }; }
+      if (q < .24) { const w = rand(70, 100); return { k: 'rig', x, y, pts: rectPts(w, w * .8), h: rand(60, 90), ext: 200, gap: rand(260, 380), ph: Math.random() * 6 }; }
       if (q < .45) { const r = rand(28, 55); return { k: 'berg', x, y, r, pts: mkBlob(r, 8, .55), h: rand(30, 70) * (1 + v * .15), ext: r + 100, gap: rand(190, 300), ph: Math.random() * 6 }; }
       const r = rand(25, 70); return { k: 'floe', x, y, r, pts: mkBlob(r, 11, .5), h: 7, ext: r + 20, gap: rand(110, 200), ph: Math.random() * 6 };
     }
@@ -566,6 +568,86 @@ function mkTerrain(y) {
       return { k: 'block', x, y, pts: rectPts(w, d), h: rand(30, 100) * (1 + v * .15), ext: 220, gap: rand(120, 200) };
     }
   }
+}
+
+/* Buildings fly at one of three altitudes:
+   low   - below your altitude: scenery, bullets pass over it
+   dest  - Legion-held (red roof marker): soaks up your fire, collapses for stars
+   tall  - towers that reach your altitude (red beacon): indestructible, block shots both ways, and hurt
+           and shove you aside if you clip them. None spawn late enough to still be on screen for the boss. */
+const STRUCTS = new Set(['sunk', 'rig', 'bldg', 'farm', 'block', 'post']);
+const TOWER_COL = { isles: '#8d979e', peaks: '#6e5244', seas: '#5d6872', sprawl: '#8a8f86', storm: '#77746c', core: '#3a4152' };
+function mkTerrain(y) {
+  const o = mkTerrain0(y);
+  if (!STRUCTS.has(o.k)) return o;
+  const inPlay = state === 'play' && LV, q = Math.random();
+  const towers = inPlay && !LV.rush && !boss && levelT > 2 && levelT < LV.len - 22; // a tower takes ~20s to cross
+  const dense = BIOMES[curSector] === 'sprawl' || BIOMES[curSector] === 'core'; // cities have far more buildings
+  if (towers && q < (dense ? .1 : .25) + bgVar * .02) {
+    const w = rand(44, 62), d = rand(40, 56);
+    Object.assign(o, { beh: 'tall', pts: rectPts(w, d), hw: w / 2, hd: d / 2, h: rand(190, 240), ext: 300, x: clamp(o.x, XL + 60, XR - 60), barn: false, ph: Math.random() * 6 });
+  } else if (inPlay && q < .45) {
+    let hw = 0, hd = 0; for (const p of o.pts) { hw = Math.max(hw, Math.abs(p[0])); hd = Math.max(hd, Math.abs(p[1])); }
+    Object.assign(o, { beh: 'dest', hw, hd, h: clamp(o.h, 30, 80), barn: false, hp: (30 + LV.L * 4) * TM.hp * TH.hp, flash: 0 });
+    o.maxHp = o.hp;
+  } else { o.beh = 'low'; o.h = Math.min(o.h, 46); }
+  return o;
+}
+// the roof is what sits at your altitude, so that's where hits land (lean() uses the live camera)
+function roofOf(o) { o.rx = o.x + (o.x - camX - W / 2) / W * .6 * o.h; o.ry = o.y + ((o.y - H * .6) / H * .45 - .28) * o.h; }
+let solids = [];
+function updStructs() {
+  solids = [];
+  for (const o of terrain) if (o.beh === 'tall' || (o.beh === 'dest' && !o.dead)) { roofOf(o); if (o.flash > 0) o.flash -= 1 / 30; if (o.ry > -80 && o.ry < H + 60) solids.push(o); }
+  if (P.dead) return;
+  for (const o of solids) {
+    if (o.beh !== 'tall') continue;
+    const m = P.r + 2;
+    if (Math.abs(P.x - o.rx) < o.hw + m && Math.abs(P.y - o.ry) < o.hd + m) { // clipped a tower: shoved clear to the roomier side
+      let side = P.x < o.rx ? -1 : 1;
+      if (o.rx + side * (o.hw + m + 2) < XL + 20 || o.rx + side * (o.hw + m + 2) > XR - 20) side = -side;
+      P.x = o.rx + side * (o.hw + m + 2); P.tx = null;
+      if (P.inv <= 0) { SND.clang(); hurtPlayer(14); }
+    }
+  }
+}
+function solidAt(x, y, r) {
+  for (const o of solids) if (!o.dead && Math.abs(x - o.rx) < o.hw + r && Math.abs(y - o.ry) < o.hd + r) return o;
+  return null;
+}
+function hurtStruct(o, d) {
+  o.hp -= d; o.flash = .12;
+  if (o.hp > 0) return;
+  o.dead = true; boom(o.rx, o.ry, 34); SND.crumble(); shake = Math.max(shake, 4);
+  dropStars(o.rx, o.ry, Math.round((4 + LV.L * .6) * TM.stars));
+  run.structs = (run.structs || 0) + 1;
+}
+function drawTower(o, pal) {
+  const col = TOWER_COL[BIOMES[curSector]] || '#7a828c';
+  const off = prism(o.x, o.y, o.pts, o.h, col, shade(col, 1.18), SHADOW ? 0 : 'rgba(255,96,72,.7)', 'rgba(0,0,0,.22)');
+  if (SHADOW) return;
+  const tx = o.x + off[0], ty = o.y + off[1];
+  // hazard band round the roof edge and a warning beacon: this one is at your altitude
+  ctx.strokeStyle = 'rgba(255,205,60,.9)'; ctx.lineWidth = 4; ctx.setLineDash([8, 6]);
+  ctx.strokeRect(tx - o.hw + 4, ty - o.hd + 4, o.hw * 2 - 8, o.hd * 2 - 8); ctx.setLineDash([]);
+  const on = Math.floor(bgT * 2.2 + o.ph) % 2;
+  ctx.fillStyle = on ? '#ff4d3a' : '#8a2418'; ctx.beginPath(); ctx.arc(tx, ty, 7, 0, 7); ctx.fill();
+  if (on) { ctx.fillStyle = 'rgba(255,77,58,.25)'; ctx.beginPath(); ctx.arc(tx, ty, 22, 0, 7); ctx.fill(); }
+}
+function drawStructMark(o) { // Legion-held: red roof roundel, white flash on hits, smoke once it's badly hurt
+  const [ox, oy] = lean(o.x, o.y, o.h), tx = o.x + ox, ty = o.y + oy;
+  ctx.fillStyle = o.flash > 0 ? 'rgba(255,255,255,.55)' : 'rgba(150,40,24,.4)'; ctx.fillRect(tx - o.hw, ty - o.hd, o.hw * 2, o.hd * 2);
+  ctx.fillStyle = 'rgba(20,10,8,.5)'; ctx.beginPath(); ctx.arc(tx, ty, 12, 0, 7); ctx.fill();
+  ctx.strokeStyle = '#ff5a3c'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(tx, ty, 12, 0, 7); ctx.stroke();
+  ctx.fillStyle = '#ff5a3c'; ctx.beginPath(); ctx.moveTo(tx, ty - 7); ctx.lineTo(tx + 6.5, ty + 5); ctx.lineTo(tx - 6.5, ty + 5); ctx.closePath(); ctx.fill();
+  if (o.hp < o.maxHp * .5 && Math.random() < .05) wx.push({ x: tx + rand(-8, 8), y: ty, vx: rand(-10, 20), vy: rand(-35, -15), t: 2, sz: rand(8, 15), smoke: 1 });
+}
+function drawRubble(o, pal) {
+  const col = TOWER_COL[BIOMES[curSector]] || '#7a828c';
+  prism(o.x, o.y, o.pts.map(p => [p[0] * .9, p[1] * .9]), 7, shade(col, .45), shade(col, .55), SHADOW ? 0 : 'rgba(0,0,0,.3)');
+  if (SHADOW) return;
+  ctx.fillStyle = 'rgba(20,16,14,.45)'; ctx.beginPath(); ctx.ellipse(o.x, o.y, o.hw * 1.2, o.hd * 1.1, 0, 0, 7); ctx.fill();
+  if (Math.random() < .03) wx.push({ x: o.x + rand(-10, 10), y: o.y, vx: rand(-10, 20), vy: rand(-30, -12), t: 2.4, sz: rand(10, 18), smoke: 1 });
 }
 
 function seedBg() {
@@ -638,6 +720,12 @@ function trees(x, y, list, leaf) {
 }
 
 function drawTerrainObj(o, S) {
+  if (o.beh === 'tall') return drawTower(o);
+  if (o.dead) return drawRubble(o);
+  drawTerrainKind(o, S);
+  if (o.beh === 'dest' && !SHADOW) drawStructMark(o);
+}
+function drawTerrainKind(o, S) {
   const B = BIOMES[curSector], pal = PAL[B];
   switch (o.k) {
     case 'isle': {
@@ -743,6 +831,11 @@ function drawTerrainObj(o, S) {
       if (o.barn) prism(o.x + 44, o.y + 12, rectPts(30, 22), o.h * .8, shade(pal.wall, .9), '#6e3b2c', 'rgba(255,255,255,.1)');
       return; }
     case 'tor': prism(o.x, o.y, o.pts, o.h, pal.rock, shade(pal.rock, 1.15), 'rgba(255,255,255,.08)'); return;
+    case 'post': { // Legion outpost: a squat bunker with a radio whip
+      const off = prism(o.x, o.y, o.pts, o.h, '#5c4a40', '#6f625a', 'rgba(255,255,255,.1)', 'rgba(0,0,0,.25)');
+      if (SHADOW) return;
+      ctx.strokeStyle = '#c9c0b4'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(o.x + off[0] + 10, o.y + off[1]); ctx.lineTo(o.x + off[0] * 1.5 + 10, o.y + off[1] * 1.5 - 4); ctx.stroke();
+      return; }
     case 'turbine': {
       const [ox, oy] = lean(o.x, o.y, o.h), tx = o.x + ox, ty = o.y + oy, a0 = bgT * o.sp + o.ph;
       if (SHADOW) {
@@ -873,8 +966,9 @@ function drawBg() {
   const S = SECTORS[curSector];
   drawGround(S);
   shadowPass(() => { for (const o of terrain) drawTerrainObj(o, S); }, 0, 0, .3);
-  for (const o of terrain) drawTerrainObj(o, S);
+  for (const o of terrain) if (o.beh !== 'tall') drawTerrainObj(o, S);
 }
+function drawTowers() { for (const o of terrain) if (o.beh === 'tall') drawTower(o); }
 
 const CLOUD_TINT = { isles: 'rgba(255,255,255,.07)', peaks: 'rgba(70,45,35,.22)', seas: 'rgba(210,222,232,.11)', sprawl: 'rgba(225,255,235,.06)', storm: 'rgba(48,54,66,.32)', core: 'rgba(170,110,255,.05)' };
 function drawClouds() {
@@ -1050,8 +1144,10 @@ function spawn(ev) {
   if (e.type === 'bomber') { e.x = e.dir > 0 ? XL - 60 : XR + 60; }
   // armoured elites: tougher, faster-firing, worth double
   if (!LV.rush && e.counted && !e.ground && ev.type !== 'hive' && Math.random() < .03 + s * .03 + (LV.tier || 0) * .07 + TH.elite) {
-    e.elite = true; e.hp = e.maxHp = e.maxHp * 1.9; e.fireRate *= .75; e.stars *= 2;
+    e.elite = true; e.hp = e.maxHp = e.maxHp * 1.9; e.fireRate *= .75; e.stars *= 2; SND.elite();
   }
+  if (ev.type === 'heli' || ev.type === 'lifter') SND.rotor(ev.type === 'lifter' ? 9 : 6);
+  if (ev.type === 'bomber') SND.flyby();
   if (LV.rush) { e.fireRate = 0; e.stars *= 3; }
   if (e.counted) run.total++;
   enemies.push(e);
@@ -1112,6 +1208,7 @@ function killEnemy(e) {
     texts.push({ x: e.x, y: e.y - 24, s: 'SALVAGE CRATE: GRAB THE PART', c: '#7fe3ff', t: 1.4, sz: 14 });
     return;
   }
+  if (e.type === 'splitter') SND.split();
   if (e.type === 'splitter') for (let i = -1; i <= 1; i++) spawn({ type: 'mini', x: e.x + i * 12, y: e.y, counted: false, vx: i * 170, vy: -70 });
   if (e.type === 'hive') { save.stats.hives++; shake = 10; }
   if (e.counted) run.kills++;
@@ -1192,7 +1289,7 @@ function sparks(x, y, c, n) {
 /* ------------------------------ UPDATE ------------------------------ */
 function update(dt) {
   gameT += dt; levelT += dt;
-  updBg(dt); updStrikes(dt);
+  updBg(dt); updStrikes(dt); updStructs();
   if (banner) { banner.t -= dt; if (banner.t <= 0) banner = null; }
   if (shake > 0) shake = Math.max(0, shake - 40 * dt);
   if (flash > 0) flash -= dt;
@@ -1220,6 +1317,7 @@ function update(dt) {
     // camera eases toward the ship: at the world edge it has panned the full PAN
     camX += (clamp((P.x - W / 2) / (W / 2 + PAN - 20), -1, 1) * PAN - camX) * Math.min(1, dt * 5);
     P.inv -= dt;
+    if (P.hp < ST.maxHp * .3 && run.endT <= 0) SND.alarm();
     if (ST.regen && P.hp < ST.maxHp) P.hp = Math.min(ST.maxHp, P.hp + ST.regen * dt);
     P.shDelay -= dt;
     if (ST.shield && P.shDelay <= 0 && P.shield < ST.shield) P.shield = Math.min(ST.shield, P.shield + ST.shield * .25 * dt);
@@ -1249,12 +1347,14 @@ function update(dt) {
         break;
       }
     }
+    if (!b.dead) { const o = solidAt(b.x, b.y, b.r); if (o) { b.dead = true; if (o.beh === 'dest') { hurtStruct(o, b.dmg); sparks(b.x, b.y, '#ffb08a', 2); } else { sparks(b.x, b.y, '#d8dde3', 2); SND.ricochet(); } } }
   }
   pb = pb.filter(b => !b.dead);
 
   // ---- laser
   if (P.lasOn > 0 && !P.dead) {
     for (const e of enemies) if (!e.dead && !e.nohit && e.y < P.y && e.y > -e.r && Math.abs(e.x - P.x) < e.r + 14) hurtEnemy(e, ST.ldps * dt, true);
+    for (const o of solids) if (o.beh === 'dest' && !o.dead && o.ry < P.y && Math.abs(o.rx - P.x) < o.hw + 14) hurtStruct(o, ST.ldps * dt);
   }
 
   // ---- enemies
@@ -1270,6 +1370,7 @@ function update(dt) {
     }
     b.x += b.vx * dt; b.y += b.vy * dt;
     if (b.y > H + 20 || b.y < -40 || b.x < XL - 20 || b.x > XR + 20) b.dead = true;
+    else if (solids.length) { const o = solidAt(b.x, b.y, b.r * .5); if (o && o.beh === 'tall') { b.dead = true; sparks(b.x, b.y, '#ff9a7a', 2); continue; } }
     else if (!P.dead && (b.x - P.x) ** 2 + (b.y - P.y) ** 2 < (P.r + b.r - 1) ** 2) { b.dead = true; hurtPlayer(10 * (1 + LV.L * .04)); }
   }
   eb = eb.filter(b => !b.dead);
@@ -1391,7 +1492,7 @@ function updEnemy(e, dt) {
       if (e.bay > 0) e.bay -= dt;
       e.spawnT -= dt;
       if (e.spawnT <= 0 && e.y > 40 && (!boss || e.loyal)) {
-        e.spawnT = 2.4 / Math.sqrt(TM.fire); e.bay = .4;
+        e.spawnT = 2.4 / Math.sqrt(TM.fire); e.bay = .4; SND.launch();
         const k = Math.floor(Math.random() * 3);
         if (k === 0) for (const sx of [-1, 1]) spawn({ type: 'scout', x: e.x + sx * 44, y: e.y + 30, counted: false });
         else if (k === 1) spawn({ type: 'diver', x: e.x, y: e.y + 40, counted: false });
@@ -1419,8 +1520,8 @@ function updEnemy(e, dt) {
   }
   if (e.type === 'turret' || e.type === 'tank' || e.type === 'sniper') e.ang = e.aiming > 0 || e.burst > 0 ? e.lockA : aim(e);
   // telegraphed bursts (sniper aim line, tank double-tap)
-  if (e.aiming > 0) { e.aiming -= dt; if (e.aiming <= 0) { e.burst = 3; e.burstT = 0; } }
-  if (e.burst > 0) { e.burstT -= dt; if (e.burstT <= 0) { e.burstT = e.type === 'tank' ? .18 : e.type === 'heli' ? .13 : .09; e.burst--; eShoot(e.x, e.y + 10, e.lockA, e.burstSp || 330); } }
+  if (e.aiming > 0) { e.aiming -= dt; if (e.aiming <= 0) { e.burst = 3; e.burstT = 0; SND.snipe(); } }
+  if (e.burst > 0) { e.burstT -= dt; if (e.burstT <= 0) { e.burstT = e.type === 'tank' ? .18 : e.type === 'heli' ? .13 : .09; e.burst--; eShoot(e.x, e.y + 10, e.lockA, e.burstSp || 330); if (e.type !== 'sniper') SND.eshot(); } }
   // mines arm when you get close, then burst
   if (e.type === 'mine' && !P.dead) {
     if (e.arm < 0 && Math.hypot(P.x - e.x, P.y - e.y) < 85) { e.arm = .7; SND.mine(); }
@@ -1451,6 +1552,7 @@ function updEnemy(e, dt) {
         case 'lifter': for (const sx of [-1, 1]) eShoot(e.x + sx * 16, e.y, a + sx * .14, 170); break;
         case 'hive': for (let i = 0; i < 6; i++) eShoot(e.x, e.y + 30, a + (i - 2.5) * .22, 140); break;
       }
+      if (e.type !== 'sniper') SND.eshot();
     }
   }
   // rescue
@@ -1499,23 +1601,62 @@ function updBoss(e, dt) {
   e.pt += dt; e.fireT -= dt;
   const p = pats[e.pat], s = LV.s;
   if (e.fireT <= 0) {
+    // Dense but always dodgeable: every pattern is built from fixed geometry with a guaranteed way through.
+    // A gap needs >24px between bullet centres (hitbox 7 + bullet 6, both sides). Rings and arcs keep that
+    // at 200px+ from the boss; walls and curtains carry an open lane that moves slower than the ship can.
     switch (p) {
-      case 'radial': { e.fireT = .95 * rage; const n = 12 + s * 2; const off = e.pt; for (let i = 0; i < n; i++) eShoot(e.x, e.y + 20, off + i / n * Math.PI * 2, 140); break; }
-      case 'fan': { e.fireT = .55 * rage; const a = aim(e); for (let i = -2; i <= 2; i++) eShoot(e.x, e.y + 30, a + i * .2, 190); break; }
-      case 'spiral': { e.fireT = .09 * rage; const a = e.pt * 3.1; eShoot(e.x, e.y, a, 150); eShoot(e.x, e.y, a + Math.PI, 150); break; }
+      case 'radial': { // rings, each turned half a step from the last
+        e.fireT = .62 * rage; const n = 22 + s * 2; e.ring = (e.ring || 0) + Math.PI / n;
+        for (let i = 0; i < n; i++) eShoot(e.x, e.y + 20, e.ring + i / n * Math.PI * 2, 135); SND.volley(); break; }
+      case 'fan': { // aimed 7-way fans plus a slow 5-way counter-fan between them
+        e.fireT = .34 * rage; e.fc = (e.fc || 0) + 1; const a = aim(e);
+        if (e.fc % 2) { for (let i = -3; i <= 3; i++) eShoot(e.x, e.y + 30, a + i * .17, 190); SND.volley(); }
+        else for (let i = -2; i <= 2; i++) eShoot(e.x, e.y + 30, a + (i + .5) * .3, 125);
+        break; }
+      case 'spiral': { // three arms, alternating direction each time the pattern comes round
+        e.fireT = .075 * rage; if (e.pt < .1) e.sdir = -(e.sdir || 1);
+        const a = e.pt * 2.4 * e.sdir; for (let k = 0; k < 3; k++) eShoot(e.x, e.y, a + k * Math.PI * 2 / 3, 150); break; }
       case 'minions': { e.fireT = 99; for (let i = 0; i < 4; i++) spawn({ type: 'diver', x: XL + 80 + i * (WW - 160) / 3, y: -30, counted: false }); break; }
-      case 'rain': { e.fireT = .16 * rage; eShoot(rand(XL + 20, XR - 20), -10, Math.PI / 2 + rand(-.1, .1), 150); break; }
-      case 'wave': { e.fireT = .85 * rage; const n = 15, gap = 1 + Math.floor(Math.random() * (n - 4)); for (let i = 0; i < n; i++) if (i < gap || i > gap + 2) eShoot(XL + 20 + i * (WW - 40) / (n - 1), e.y + 30, Math.PI / 2, 120); break; }
-      case 'cone': { e.fireT = .07 * rage; eShoot(e.x, e.y + e.r * .6, aim(e) + rand(-.4, .4), rand(190, 250)); break; }
+      case 'rain': { // a staggered curtain falling from the sky with one drifting open lane
+        e.fireT = .26 * rage; e.row = (e.row || 0) + 1;
+        const amp = WW / 2 - 130; if (e.pt < .1) e.gseed = Math.asin(clamp((P.x - W / 2) / amp, -1, 1)); // the lane opens where you are
+        const lane = 40, gc = W / 2 + Math.sin(e.pt * .8 + e.gseed) * amp, off = e.row % 2 ? lane / 2 : 0;
+        for (let x = XL + 14 + off; x < XR - 8; x += lane) if (Math.abs(x - gc) > 74) eShoot(x, -10, Math.PI / 2, 160);
+        break; }
+      case 'wave': { // walls with a three-lane gap that never jumps further than the ship can follow
+        e.fireT = .7 * rage; const n = 17;
+        const reach = Math.max(1, Math.floor(400 * ST.speed * e.fireT * .3 / (WW / (n - 1))));
+        e.gap = e.gap == null ? 7 : clamp(e.gap + Math.round(rand(-reach, reach)), 1, n - 4);
+        for (let i = 0; i < n; i++) if (i < e.gap || i > e.gap + 2) eShoot(XL + 20 + i * (WW - 40) / (n - 1), e.y + 30, Math.PI / 2, 125);
+        SND.volley(); break; }
+      case 'cone': { // flame tongues: aim locks for each five-arc burst, so the lanes between the rays stay straight
+        e.fireT = .13 * rage; e.fc = (e.fc || 0) + 1;
+        if (e.fc % 7 < 2) { e.ca = aim(e); break; } // breath
+        for (let i = -4; i <= 4; i++) eShoot(e.x, e.y + e.r * .6, e.ca + i * .13, 175);
+        if (e.fc % 7 === 2) SND.flame(); break; }
       case 'mines': { e.fireT = 99; for (let i = 0; i < 4; i++) spawn({ type: 'mine', x: XL + 70 + i * (WW - 140) / 3, y: e.y + 20, counted: false }); break; }
-      case 'shards': { e.fireT = 1.0 * rage; const a = aim(e); for (let i = -1; i <= 1; i++) { const b = eShoot(e.x, e.y + 30, a + i * .35, 130); b.r = 11; b.split = .9; } break; }
-      case 'beam': { e.fireT = 99; e.beam = { x: clamp(P.x, XL + 30, XR - 30), tele: 1.1, on: 0 }; SND.charge(); break; }
-      case 'cross': { e.fireT = .13 * rage; for (let k = 0; k < 4; k++) eShoot(e.x, e.y, e.pt * 1.5 + k * Math.PI / 2, 150); break; }
-      case 'bolts': { e.fireT = 1.05 * rage; for (let i = 0; i < 3; i++) strikes.push({ x: clamp(P.x + (i ? rand(-120, 120) : 0), XL + 30, XR - 30), y: clamp(P.y + (i ? rand(-90, 90) : 0), 140, H - 60), tele: .95, on: 0 }); break; }
+      case 'shards': { // aimed shards that burst into rings, with a thin ring between salvos
+        e.fireT = .85 * rage; const a = aim(e);
+        for (let i = -1; i <= 1; i++) { const b = eShoot(e.x, e.y + 30, a + i * .4, 130); b.r = 11; b.split = .9; }
+        for (let i = 0; i < 16; i++) eShoot(e.x, e.y, i / 16 * Math.PI * 2 + e.pt, 100);
+        SND.volley(); break; }
+      case 'beam': { // telegraphed column, flanked by slow aimed pairs that never cross the safe side
+        if (!e.beam && e.pt < .2) { e.beam = { x: clamp(P.x, XL + 30, XR - 30), tele: 1.3, on: 0 }; SND.charge(); }
+        e.fireT = .45 * rage;
+        if (e.beam) for (const sx of [-1, 1]) eShoot(e.beam.x + sx * 70, e.y + 40, Math.PI / 2, 140);
+        break; }
+      case 'cross': { // five rotating arms that reverse each time
+        e.fireT = .11 * rage; if (e.pt < .1) e.sdir = -(e.sdir || 1);
+        for (let k = 0; k < 5; k++) eShoot(e.x, e.y, e.pt * 1.3 * e.sdir + k * Math.PI * 2 / 5, 150); break; }
+      case 'bolts': { // lightning on and around you, and a slow ring to weave through between strikes
+        e.fireT = 1.05 * rage;
+        for (let i = 0; i < 3; i++) strikes.push({ x: clamp(P.x + (i ? rand(-120, 120) : 0), XL + 30, XR - 30), y: clamp(P.y + (i ? rand(-90, 90) : 0), 140, H - 60), tele: .95, on: 0 });
+        const n = 18; e.ring = (e.ring || 0) + Math.PI / n; for (let i = 0; i < n; i++) eShoot(e.x, e.y + 20, e.ring + i / n * Math.PI * 2, 115);
+        break; }
       case 'summon': { e.fireT = 99; for (const sx of [-1, 1]) spawn({ type: 'splitter', x: e.x + sx * 120, y: e.y, counted: false }); break; }
     }
   }
-  const dur = { minions: 1.5, mines: 1.5, summon: 1.5, beam: 2.6 }[p] || 3.2;
+  const dur = { minions: 1.5, mines: 1.5, summon: 1.5, beam: 2.6, rain: 4.2 }[p] || 3.2;
   if (e.pt > dur) e.rest = 1.1 * rage;
   if (!P.dead && (e.x - P.x) ** 2 + (e.y - P.y) ** 2 < (e.r * .7 + P.r) ** 2) hurtPlayer(25);
 }
@@ -1855,6 +1996,7 @@ function render() {
   drawBg();
   for (const e of enemies) if (e.ground) drawEnemy(e);
   if (isStorm()) drawStormHaze();
+  drawTowers();
   drawClouds(); drawGrade();
   shadowPass(() => {
     for (const e of enemies) if (!e.ground) e.boss ? drawBoss(e) : drawEnemy(e);
@@ -1967,7 +2109,7 @@ const MEDALS = [
 let lastLevel = null;
 function finishLevel(success) {
   run.done = true;
-  SND.stopMusic(); setTimeout(() => success ? SND.win() : SND.lose(), 350);
+  SND.stopMusic(); SND.ambience(null); setTimeout(() => success ? SND.win() : SND.lose(), 350);
   const lines = [], L = LV.L, tier = LV.tier || 0, nM = tierMedalCount(tier);
   const collected = Math.round(run.stars - run.rescueStars);
   lines.push(['Stars collected', collected]);
@@ -2016,6 +2158,7 @@ function finishLevel(success) {
     (unlockedTier ? `<div><span style="color:#3fd8ff">🔓 ${TIERS[unlockedTier].name} unlocked for mission ${LV.label.split(' ')[0]}</span><span></span></div>` : '') +
     `<div class="total"><span>Total</span><span>★ ${fmt(total)}</span></div>`;
   $('resHangar').textContent = run.newShip ? 'Fleet' : 'Hangar';
+  { let k = 0; newly.forEach((n, i) => { if (n) setTimeout(() => SND.medal(k), 1300 + k++ * 260); }); }
   $('resQuip').textContent = run.newShip ? `I have finished assembling the ${run.newShip.name}. Select it in the Fleet bay. I would test it myself, but, well.` : unlockedTier ? `Every medal. I have prepared ${TIERS[unlockedTier].name}: same mission, nastier Legion, better pay.` : pick(success ? QUIPS.win : QUIPS.lose);
   lastLevel = LV;
   const nextL = !LV.rush && !tier && success && L + 1 < NLEVELS ? L + 1 : null;
@@ -2039,7 +2182,7 @@ function go(id) {
   if (id === 'briefing') { showStory('INCOMING TRANSMISSION', STORY.intro, () => go('menu')); return; }
   state = id; curSector = id === 'map' ? curSector : curSector;
   refreshStars();
-  if (['menu', 'map', 'hangar', 'fleet', 'ach', 'howto'].includes(id)) { SND.duck(false); SND.music('menu', 1776, 0); }
+  if (['menu', 'map', 'hangar', 'fleet', 'ach', 'howto'].includes(id)) { SND.duck(false); SND.ambience(null); SND.music('menu', 1776, 0); }
   if (id === 'menu') $('menuQuip').textContent = pick(QUIPS.menu);
   if (id === 'map') buildMap();
   if (id === 'hangar') { $('hangarQuip').textContent = pick(QUIPS.hangar); buildHangar(); }

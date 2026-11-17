@@ -12,7 +12,7 @@ const SND = (() => {
   let opts = { music: true, sfx: true };
   try { Object.assign(opts, JSON.parse(localStorage.getItem(OPT_KEY)) || {}); } catch (e) {}
   const saveOpts = () => { try { localStorage.setItem(OPT_KEY, JSON.stringify(opts)); } catch (e) {} };
-  const MUS_VOL = .36, SFX_VOL = .5;
+  const MUS_VOL = .2, SFX_VOL = .5;
 
   function ensure() {
     if (ctx) return ctx;
@@ -35,7 +35,7 @@ const SND = (() => {
     const d = noiseBuf.getChannelData(0); for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
     return ctx;
   }
-  function catchUp() { if (want && live() && (!song || song.id !== want.id)) startSong(); }
+  function catchUp() { if (want && live() && (!song || song.id !== want.id)) startSong(); if (ambWant && !amb && live()) ambience(ambWant); }
   function unlock() {
     const c = ensure(); if (!c) return;
     if (!unlocked) unlocked = true;
@@ -240,6 +240,21 @@ const SND = (() => {
   function duck(on) { ducked = on; if (song) ramp(musTarget(), .25); }
   document.addEventListener('visibilitychange', () => { if (!ctx || !unlocked) return; document.hidden ? ctx.suspend() : ctx.resume().then(catchUp); });
 
+  // looping weather bed (rain on the Stormfront)
+  let amb = null, ambWant = null;
+  function ambience(kind) {
+    ambWant = kind;
+    if (!ctx) return;
+    if (amb) { const a = amb; a.g.gain.setTargetAtTime(0, ctx.currentTime, .3); setTimeout(() => { try { a.src.stop(); } catch (e) {} }, 1500); amb = null; }
+    if (!kind || !live()) return;
+    const src = ctx.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+    const f = ctx.createBiquadFilter(); f.type = 'bandpass'; f.frequency.value = 2600; f.Q.value = .5;
+    const lp = ctx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 7000;
+    const g = ctx.createGain(); g.gain.value = 0; g.gain.setTargetAtTime(.055, ctx.currentTime, .8);
+    src.connect(f).connect(lp).connect(g).connect(sfxBus); src.start();
+    amb = { src, g };
+  }
+
   // a short brass phrase outside the march (jingles)
   function phrase(notes, sd = .13, vel = 1) {
     if (!live() || !opts.sfx) return;
@@ -251,7 +266,7 @@ const SND = (() => {
   }
 
   return {
-    unlock, music, stopMusic, duck,
+    unlock, music, stopMusic, duck, ambience,
     get opts() { return opts; },
     get debug() { return { ctx: ctx && ctx.state, unlocked, song: song && song.id, step, loopN, want: want && want.id }; },
     compose,
@@ -293,6 +308,24 @@ const SND = (() => {
     charge() { if (throttle('chg', 200)) tone(300, .9, { type: 'sawtooth', gain: .035, sweepTo: 1300 }); },
     strike() { noise(.12, { gain: .3, filter: 'highpass', freq: 2500 }); noise(1.2, { gain: .22, freq: 700, sweepTo: 60, delay: .03 }); tone(60, .7, { gain: .2, sweepTo: 30 }); },
     thunder() { const d = .15 + Math.random() * .9; noise(.08, { gain: .12, filter: 'highpass', freq: 3000 }); noise(2.4, { gain: .2, freq: 380, sweepTo: 50, delay: d, attack: .12 }); tone(45, 1.8, { gain: .12, sweepTo: 28, delay: d }); },
+    // enemy fire and movement
+    eshot() { if (throttle('esh', 70)) tone(520 + Math.random() * 80, .07, { type: 'square', gain: .012, sweepTo: 300 }); },
+    volley() { if (throttle('vol', 110)) { tone(150, .18, { type: 'sawtooth', gain: .045, sweepTo: 80 }); noise(.12, { gain: .05, filter: 'bandpass', freq: 900, q: 1.2 }); } },
+    flame() { if (throttle('flm', 90)) noise(.35, { gain: .07, filter: 'bandpass', freq: 500, sweepTo: 1400, q: .8, attack: .04 }); },
+    snipe() { noise(.05, { gain: .12, filter: 'highpass', freq: 3000 }); tone(900, .12, { type: 'square', gain: .04, sweepTo: 200 }); },
+    rotor(n = 6) { if (!throttle('rot', 600)) return; for (let i = 0; i < n; i++) noise(.06, { gain: .05 * (1 - i / (n + 2)), freq: 260, delay: i * .085 }); },
+    flyby() { if (throttle('fly', 500)) noise(1.4, { gain: .09, filter: 'bandpass', freq: 400, sweepTo: 1800, q: 1.4, attack: .5 }); },
+    launch() { if (throttle('lau', 150)) tone(380, .18, { type: 'triangle', gain: .035, sweepTo: 760 }); },
+    split() { if (throttle('spl', 80)) { tone(1100, .06, { type: 'square', gain: .03, sweepTo: 2200 }); noise(.08, { gain: .05, filter: 'highpass', freq: 2500 }); } },
+    elite() { if (throttle('eli', 400)) [1319, 1661, 1976].forEach((f, i) => tone(f, .12, { type: 'triangle', gain: .03, delay: i * .05 })); },
+    // structures
+    crumble() { if (!throttle('crm', 60)) return; noise(.9, { gain: .16, freq: 700, sweepTo: 90 }); tone(70, .6, { gain: .14, sweepTo: 30 }); for (let i = 1; i < 4; i++) noise(.12, { gain: .06, filter: 'bandpass', freq: 1800, q: 2, delay: .1 + i * .09 }); },
+    ricochet() { if (throttle('ric', 90)) tone(2400 + Math.random() * 800, .06, { type: 'triangle', gain: .02, sweepTo: 1600 }); },
+    clang() { if (throttle('clg', 300)) { tone(210, .5, { type: 'square', gain: .06, sweepTo: 140 }); tone(317, .4, { type: 'triangle', gain: .05 }); noise(.2, { gain: .1, freq: 1200 }); } },
+    // player state
+    alarm() { if (throttle('alm', 1100)) { tone(880, .12, { type: 'square', gain: .03 }); tone(660, .12, { type: 'square', gain: .03, delay: .16 }); } },
+    takeoff() { noise(1.6, { gain: .1, filter: 'bandpass', freq: 300, sweepTo: 2200, q: 1, attack: .3 }); tone(90, 1.4, { type: 'sawtooth', gain: .03, sweepTo: 240 }); },
+    medal(i = 0) { tone(1047 * Math.pow(2, Math.min(i, 8) / 12), .18, { type: 'triangle', gain: .06, delay: .02 }); tone(2093 * Math.pow(2, Math.min(i, 8) / 12), .25, { type: 'sine', gain: .03, delay: .06 }); },
     // UI and results
     click() { if (throttle('clk', 40)) tone(720, .045, { type: 'square', gain: .03 }); },
     buy() { tone(1319, .08, { type: 'square', gain: .04 }); tone(1760, .2, { type: 'square', gain: .04, delay: .07 }); },
