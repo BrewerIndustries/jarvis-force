@@ -89,6 +89,9 @@ Everything is procedural Canvas 2D with a pseudo-3D look:
 - Terrain prisms (`prism()`) lean away from the screen centre as they scroll past, and walls are shaded from a top-left light.
 - Shadows for terrain, jets and bosses are drawn into one black offscreen layer (`shadowPass()`) and composited once.
 - Ships and drones use gradient body shading.
+- **Side-scrolling camera:** the world is 64px wider than the screen on each side (`PAN`, `XL`/`XR` in game.js).
+  The camera eases after the ship, so steering toward an edge pans the view and reveals extra room. Waves are
+  stretched across the wider world (`widen()`), and clouds slide slightly faster than the ground for parallax.
 - Each biome adds weather (embers, snow, pollen or data motes), and the world sits under a vignette.
 
 ## Code layout
