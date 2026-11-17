@@ -5,7 +5,7 @@ A vertical-scrolling shoot-'em-up with a star-economy upgrade loop. It's an orig
 **Story:** Six years after the Collapse, the old defense network has gone rogue as the **Rust Legion**. Jarvis has taken
 command of what's left of the air force. He builds the jets, runs the hangar and upgrades, and plans every
 sortie, but he can't fly (eleven million simulations, eleven million lakes). You are the human pilot. Rescue
-survivors, bring stars home, and push through five sectors to the **Overseer Core**.
+survivors, bring stars home, and push through six sectors to the **Overseer Core**.
 
 ## Live
 
@@ -30,11 +30,15 @@ Space/B or the EMP button = EMP charge · P/Esc or the ⏸ button = pause. The s
 
 ## Content
 
-- **20 missions** across 5 sectors, each with its own terrain (`BIOMES` in game.js):
+- **24 missions** across 6 sectors, each with its own terrain (`BIOMES` in game.js):
   - Drowned Coast: islands, shallows and drowned tower blocks
   - Ashen Peaks: faceted mountains, volcanoes and lava rivers
   - Frozen Relay: a stormy sea with rolling swell, ice floes, icebergs and radio rigs
   - Overgrown Sprawl: city blocks with overgrown rooftops
+  - Stormfront: rain-lashed moorland with patchwork fields, flooded pools, wind turbines and lattice masts.
+    Dark cloud banks drift over the fight and hide any drone flying beneath them (their bullets stay visible).
+    Rain hazes the ground, so tanks and turrets are hard to spot, and survivors and salvage crates burn flares
+    so you can still find them. Lightning flashes light up the moor for a moment and are drawn to the masts.
   - Overseer Core: machine plating, conduits, data cylinders and vents
 
   Wave height, volcano count and building height grow through each sector, and each mission in a sector has its own
@@ -43,15 +47,16 @@ Space/B or the EMP button = EMP charge · P/Esc or the ⏸ button = pause. The s
 - **3 tiers per mission (Mk I / Mk II / Mk III).** Earn every medal on a tier to unlock the next one. It's the same
   mission (same seed) with extra seeded waves layered on, plus tougher drones, heavier and faster fire, and more damage
   (`TIERS` in game.js), with bigger star and medal payouts. Each tier adds a medal: Mk II = *No EMP used*,
-  Mk III = *30-kill chain*. That's 5 + 6 + 7 = 18 medals per mission, 360 in all. The tier picker opens from the
+  Mk III = *30-kill chain*. That's 5 + 6 + 7 = 18 medals per mission, 432 in all. The tier picker opens from the
   mission board once a mission has anything past Mk I to show.
-- **Fleet of 8 ships.** Ember is the starter. The other 7 (Kestrel, Lifeline, Bulwark, Tempest, Aegis, Phantom, Sovereign)
+- **Fleet of 9 ships**, on its own Fleet screen (the Hangar is upgrades only). Ember is the starter. The other 8 (Kestrel, Lifeline, Bulwark, Tempest, Stormcrow, Aegis, Phantom, Sovereign)
   are each assembled from 4 parts (Wings, Engine, Cockpit, Reactor) found in blue **salvage crates**. Each part lives on one
-  mission and tier (`PART_SPOTS`). Sectors 1–5 Mk I hold Kestrel → Aegis, Mk II holds Phantom and Mk III holds Sovereign.
+  mission and tier (`PART_SPOTS`). Sectors 1–6 Mk I hold Kestrel → Aegis, Mk II holds Phantom and Mk III holds Sovereign.
   Missions with a part still to find show 🔩. Every ship has trade-offs (`SHIPS[].mods`): hull, shield, speed, fire rate,
   damage, rescue speed, magnet, star value, hitbox, recovery time, and a **First Strike barrier** that blocks one hit and
   restores itself. Upgrades apply to every ship. Parts are saved the moment you pick them up.
-- **14 enemy types**, including the **Hive** (a carrier that launches drones until destroyed, and retreats when the boss
+- **16 enemy types**, including **attack helicopters** (they hover on station, sidestep and fire 3-round bursts, then pull out),
+  twin-rotor **lifters** that set two turrets down on the ground as they pass, the **Hive** (a carrier that launches drones until destroyed, and retreats when the boss
   arrives), mines that arm near you and burst, snipers with a telegraphed aim line, splitters that break into
   three, and patrolling ground tanks.
 - **Unique sector bosses** (`BOSSES`), each with its own silhouette and attack set:
@@ -59,10 +64,11 @@ Space/B or the EMP button = EMP charge · P/Esc or the ⏸ button = pause. The s
   - Cinder Colossus (flame cone, mine drops)
   - Glacier Maw (splitting ice shards, telegraphed beam)
   - Thornwarden (rotating cross, summons splitters)
+  - Thunderhead (a storm cell with an anemometer crown; calls down telegraphed lightning strikes, three at a time)
   - Overseer (3 phases, with a Hive at phase 2)
 
   Each sector's vanguard mini-boss uses a subset of its boss's attacks.
-- **5 Star Rush bonus stages** (one per sector, unlocked by beating its boss). No enemy fire, stars everywhere.
+- **6 Star Rush bonus stages** (one per sector, unlocked by beating its boss). No enemy fire, stars everywhere.
 - **20 upgrades** in Jarvis's hangar: Pulse Cannon, Autoloader, Wing Guns, Seeker Missiles, Arc Lance (beam),
   Wingman Drones, Hull Plating, Deflector shield, Repair Nanites, EMP Charges, Star Magnet, Salvage Scanner
   (+star value), Targeting Core (crits), Thrusters (speed), Reactive Armour (damage reduction), Flak Pods (shrapnel ring),
@@ -72,7 +78,7 @@ Space/B or the EMP button = EMP charge · P/Esc or the ⏸ button = pause. The s
   (^0.55). Gold-ringed **elite** drones (×1.9 HP, faster fire, ×2 stars) get more common by sector, by tier and when you're over-built.
   A toast and the tier sheet show the threat multiplier when it's high.
 - **3 difficulties**: Cadet (default, gentle) / Pilot (+30% stars) / Ace (+70% stars).
-- **27 Commendations** (one-time star rewards) and a **daily check-in** streak.
+- **28 Commendations** (one-time star rewards) and a **daily check-in** streak.
 
 ### Ways to earn stars
 Drone kills · kill-chain multiplier (up to ×3, plus an end-of-mission chain bonus) · survivor rescues ·
@@ -118,5 +124,8 @@ about 1.5–2× the enemies and roughly 4× the stars of Mk I.
 Hardening (bot, 2026-11-16): a maxed jet used to kill the 1-4 boss in about 6s without taking damage. It now takes about 16s
 and real damage. A 25% loadout still clears 5-4, and an un-upgraded Ember loses on 2-4. The boss sway clock now starts on
 arrival (it used to reuse the entry timer, so bosses snapped sideways when they arrived), and the boss's x eases toward its target.
+
+Save `sv: 2` marks the six-sector layout. Older saves (no `sv`) are migrated on load: Core progress moves from missions
+16–19 to 20–23, along with its Star Rush clear and story flag.
 
 Save adds `ships: { <id>: [4 part flags] }` and `ship` (selected id). Part pickups write immediately via `collectPart()`.

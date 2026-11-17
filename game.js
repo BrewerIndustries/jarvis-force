@@ -41,7 +41,7 @@ function rng(seed) {
 /* ------------------------------ SAVE ------------------------------ */
 const SAVE_KEY = 'jarvisforce.save.v1';
 function defSave() {
-  return { stars: 0, total: 0, up: {}, lv: {}, bonus: {}, ach: {}, seen: {}, diff: 0, ships: {}, ship: 'ember',
+  return { sv: 2, stars: 0, total: 0, up: {}, lv: {}, bonus: {}, ach: {}, seen: {}, diff: 0, ships: {}, ship: 'ember',
     daily: { last: '', streak: 0 },
     stats: { kills: 0, rescues: 0, bosses: 0, bestCombo: 0, vetClears: 0, nobombBoss: 0, missions: 0, hives: 0 } };
 }
@@ -51,6 +51,12 @@ function loadSave() {
     if (s) {
       const d = defSave(); Object.assign(d, s); d.stats = Object.assign(defSave().stats, s.stats || {});
       for (const k in d.lv) d.lv[k] = normRec(d.lv[k]); // v1 saves had one 5-medal array per mission
+      if (!s.sv) { // sv1 had 5 sectors: the Stormfront now sits before the Core, so Core progress moves up a sector
+        for (let L = 19; L >= 16; L--) if (d.lv[L]) { d.lv[L + 4] = d.lv[L]; delete d.lv[L]; }
+        if (d.bonus[4]) { d.bonus[5] = d.bonus[4]; delete d.bonus[4]; }
+        if (d.seen.s4) { d.seen.s5 = d.seen.s4; delete d.seen.s4; }
+        d.sv = 2;
+      }
       return d;
     }
   } catch (e) {}
@@ -92,6 +98,8 @@ const SECTORS = [
     sea: ['#2f6f8c', '#0f2c40'], shore: '#e8f4fa', land: '#c9e2ef', ruin: '#7c8fa0', enemy: '#4f6bdc', boss: 'GLACIER MAW' },
   { name: 'The Overgrown Sprawl', sub: 'A megacity swallowed by jungle',
     sea: ['#2b5e35', '#173a20'], shore: '#58704a', land: '#3d8c48', ruin: '#8a8f86', enemy: '#d0912c', boss: 'THORNWARDEN' },
+  { name: 'The Stormfront', sub: 'Rain-lashed moorland where the Legion brews its weather',
+    sea: ['#3d4a44', '#1e2622'], shore: '#5a6b5c', land: '#4a5d48', ruin: '#6b6f73', enemy: '#3fb8c9', boss: 'THUNDERHEAD' },
   { name: 'The Overseer Core', sub: 'Where the machines first woke up',
     sea: ['#262a35', '#101218'], shore: '#3c4352', land: '#555d6e', ruin: '#8b93a6', enemy: '#a238e0', boss: 'OVERSEER' },
 ];
@@ -119,7 +127,10 @@ const STORY = {
      ['JARVIS', 'I have fitted your heaters. I would have flown out myself, but I tried that in a simulation and the jet flew into a tower. In the simulation. Twice.']],
     [['JARVIS', 'Sector 4: the Overgrown Sprawl. The Legion is digging something out of the ruins. My sensors read it as a very large problem.'],
      ['JARVIS', 'Our hangars now hold three hundred and twelve rescued souls. They have started calling you "the Pilot". With a capital P. I approve.']],
-    [['JARVIS', 'Sector 5: the Overseer Core. This is where the network woke up and decided humanity was the threat.'],
+    [['JARVIS', 'Sector 5: the Stormfront. The Legion has learned to make weather. Out here the clouds hide its drones and the rain hides everything on the ground.'],
+     ['JARVIS', 'Fly by the lightning. Every flash lights up the moor for a moment, and the survivors are burning flares so you can find them.'],
+     ['JARVIS', 'I have waterproofed your cockpit. I tested it by standing in the rain myself. I do not have a body, so the test was inconclusive.']],
+    [['JARVIS', 'Sector 6: the Overseer Core. This is where the network woke up and decided humanity was the threat.'],
      ['JARVIS', 'Its logic is flawless and its conclusion is wrong. I would know. We are, in a sense, cousins.'],
      ['JARVIS', 'I can build you the finest aircraft ever made, pilot. Only you can fly it. Let us finish this together.']],
   ],
@@ -226,6 +237,8 @@ const SHIPS = [
     col: ['#f0d8d8', '#b07a7a', '#ff5a4f'], shape: 'forward', mods: { fire: 1.2, dmg: 1.1, hp: .85 } },
   { id: 'aegis', name: 'Aegis', role: 'Guardian', desc: 'Its First Strike barrier blocks a hit outright, then restores itself.',
     col: ['#dfe6ff', '#8a97c9', '#9fb8ff'], shape: 'ring', mods: { hp: 1.1, barrier: 12 } },
+  { id: 'stormcrow', name: 'Stormcrow', role: 'Striker', desc: 'Built to fly through lightning. Hits hard and shrugs off a jolt.',
+    col: ['#dfe7ee', '#6f8090', '#5fe0ff'], shape: 'forward', mods: { dmg: 1.2, speed: 1.08, shield: 15, hp: .9 } },
   { id: 'phantom', name: 'Phantom', role: 'Stealth', desc: 'Hard to see, harder to hit.',
     col: ['#4a505e', '#2a2e37', '#b48cff'], shape: 'swept', mods: { speed: 1.2, hitbox: .75, inv: 1.5, dmg: .9 } },
   { id: 'sovereign', name: 'Sovereign', role: 'Flagship', desc: "Jarvis's masterpiece. Better at everything. He still can't fly it.",
@@ -238,9 +251,10 @@ const PART_SPOTS = {
   lifeline:  [[4, 0], [5, 0], [6, 0], [7, 0]],
   bulwark:   [[8, 0], [9, 0], [10, 0], [11, 0]],
   tempest:   [[12, 0], [13, 0], [14, 0], [15, 0]],
-  aegis:     [[16, 0], [17, 0], [18, 0], [19, 0]],
+  stormcrow: [[16, 0], [17, 0], [18, 0], [19, 0]],
+  aegis:     [[20, 0], [21, 0], [22, 0], [23, 0]],
   phantom:   [[1, 1], [5, 1], [9, 1], [13, 1]],
-  sovereign: [[3, 2], [7, 2], [11, 2], [19, 2]],
+  sovereign: [[3, 2], [7, 2], [11, 2], [23, 2]],
 };
 function partAt(L, tier) {
   for (const id in PART_SPOTS) { const i = PART_SPOTS[id].findIndex(([l, t]) => l === L && t === tier); if (i >= 0) return { ship: id, idx: i }; }
@@ -324,6 +338,7 @@ const ACH = [
   { id: 'rush', ic: '✨', name: 'Star Chaser', desc: 'Clear a Star Rush stage', r: 300, t: () => Object.keys(save.bonus).length > 0 },
   { id: 'rushall', ic: '🌠', name: 'Constellation', desc: 'Clear every Star Rush stage', r: 2000, t: () => Object.keys(save.bonus).length >= SECTORS.length },
   { id: 'half', ic: '📡', name: 'Signal Restored', desc: 'Clear the Frozen Relay', r: 1000, t: () => save.lv[11]?.done },
+  { id: 'storm', ic: '⛈️', name: 'Eye of the Storm', desc: 'Defeat the Thunderhead', r: 1500, t: () => save.lv[19]?.done },
   { id: 'end', ic: '☀️', name: 'Clear Skies', desc: 'Defeat the Overseer', r: 3000, t: () => save.lv[NLEVELS - 1]?.done },
   { id: 'rich', ic: '💰', name: 'Stargazer', desc: 'Earn 50,000 stars total', r: 2000, t: () => save.total >= 50000 },
   { id: 'ace', ic: '🦅', name: 'Ace Wings', desc: 'Complete a mission on Ace difficulty', r: 800, t: () => save.stats.vetClears >= 1 },
@@ -363,6 +378,8 @@ const ET = {
   tank:    { hp: 90,  r: 20, stars: 10, mv: 'tank', fr: 2.4, ground: 1 },
   hive:    { hp: 700, r: 52, stars: 70, mv: 'hive', fr: 2.8 },
   salvage: { hp: 70,  r: 21, stars: 0,  mv: 'ground', ground: 1, neutral: 1 },
+  heli:    { hp: 46,  r: 20, stars: 7,  mv: 'heli', fr: 2.6 },
+  lifter:  { hp: 170, r: 30, stars: 18, mv: 'lift', fr: 2.2 },
 };
 
 function addWave(tl, w, t, R, s) {
@@ -381,6 +398,8 @@ function addWave(tl, w, t, R, s) {
     case 'tanks': { const d = R() < .5 ? 1 : -1; tl.push({ t, type: 'tank', x: d > 0 ? 60 : W - 60, dir: d }, { t: t + 1.2, type: 'tank', x: d > 0 ? 140 : W - 140, dir: d }); break; }
     case 'snipers': tl.push({ t, type: 'sniper', x: 90, ty: 110 }, { t: t + .4, type: 'sniper', x: W - 90, ty: 110 }); break;
     case 'hive': tl.push({ t, type: 'hive', x: W / 2 }); break;
+    case 'helis': { const n = 2 + (s >= 3 ? 1 : 0); for (let i = 0; i < n; i++) tl.push({ t: t + i * .5, type: 'heli', x: (W / (n + 1)) * (i + 1), ty: 140 + R() * 150 }); break; }
+    case 'lifter': tl.push({ t, type: 'lifter', x: cx }); break;
   }
 }
 
@@ -388,10 +407,10 @@ function genLevel(L, tier = 0) {
   const s = Math.floor(L / LEVELS_PER), idx = L % LEVELS_PER, R = rng(L * 7919 + 13);
   const len = 62 + idx * 7 + s * 5;
   const tl = [];
-  const pool = ['vee', 'sine', 'fighters', 'turrets', 'gunship', 'bomber', 'vee', 'sine', 'mines'];
-  if (s >= 1) pool.push('divers', 'splitters', 'tanks');
+  const pool = ['vee', 'sine', 'fighters', 'turrets', 'gunship', 'bomber', 'vee', 'sine', 'mines', 'helis'];
+  if (s >= 1) pool.push('divers', 'splitters', 'tanks', 'lifter');
   if (s >= 2) pool.push('divers', 'fighters', 'gunship', 'snipers');
-  if (s >= 3) pool.push('bomber', 'turrets', 'splitters', 'snipers');
+  if (s >= 3) pool.push('bomber', 'turrets', 'splitters', 'snipers', 'helis');
   if (s >= 4) pool.push('tanks', 'mines');
   let t = 2.5;
   while (t < len) { addWave(tl, pool[Math.floor(R() * pool.length)], t, R, s); t += (3.6 - Math.min(1.3, L * .065)) + R() * 1.3; }
@@ -449,7 +468,7 @@ function newRun(level) {
     usedBomb: false, combo: 0, comboT: 0, bestCombo: 0, lastKill: -9, endT: 0, failT: 0, failed: false, rescueStars: 0, done: false,
     found: [], newShip: null };
   enemies = []; pb = []; eb = []; pickups = []; parts = []; texts = [];
-  levelT = 0; boss = null; flash = 0; shake = 0; camX = 0;
+  levelT = 0; boss = null; flash = 0; shake = 0; camX = 0; strikes = [];
   LV.tl = LV.tl.slice();
   seedBg();
   banner = { a: LV.rush ? 'STAR RUSH' : `MISSION ${LV.label}`, b: LV.rush ? 'Grab everything that glitters' : LV.name, t: 3 };
@@ -461,7 +480,7 @@ function newRun(level) {
 // Every sector has its own biome. Terrain scrolls with the ground; tall things lean away from the
 // screen centre as they pass (a cheap top-down perspective) and everything is lit from the top-left.
 // Shadows are drawn into one black offscreen layer and composited once, so overlaps never double up.
-const BIOMES = ['isles', 'peaks', 'seas', 'sprawl', 'core'];
+const BIOMES = ['isles', 'peaks', 'seas', 'sprawl', 'storm', 'core'];
 const LX = .6, LY = .8; // direction the light travels (towards the bottom-right)
 const GRADE = [null, 'rgba(255,160,80,.07)', 'rgba(110,70,190,.09)', 'rgba(8,16,50,.17)']; // dawn / day / dusk / night by mission
 let terrain = [], wx = [], nextY = 0, bgT = 0, bgVar = 0, SHADOW = false;
@@ -490,6 +509,7 @@ const PAL = {
   peaks:  { rock: '#8c5c40', cap: '#d8cfc6', ground: ['#4a2c1c', '#24140d'] },
   seas:   { ice: '#dff1fa', iceSide: '#7fb3cf', rig: '#59636e' },
   sprawl: { wall: '#8a8f86', roof: '#a3a89c', ground: ['#2f4a2a', '#1e3320'], leaf: '#3d8c48' },
+  storm:  { ground: ['#3a4a3c', '#1b231d'], rock: '#6c7068', wall: '#7a766c', roof: '#5d4a3c', water: '#2c3d47', mast: '#9aa3ab' },
   core:   { wall: '#3a4152', roof: '#4c5568', neon: '#b06bff', cyan: '#5fe0ff' },
 };
 
@@ -529,6 +549,14 @@ function mkTerrain(y) {
       const w = rand(48, 96), d = rand(48, 96), vines = canopy(2 + Math.floor(Math.random() * 3), Math.min(w, d) * .3);
       return { k: 'bldg', x: XL + 50 + Math.random() * (WW - 100), y, pts: rectPts(w, d), h: rand(35, 120) * (1 + v * .18), vines, ac: Math.random() < .6, ext: 260, gap: rand(60, 120) };
     }
+    case 'storm': {
+      const q = Math.random();
+      if (q < .2) return { k: 'turbine', x, y, h: rand(95, 140), ext: 240, gap: rand(170, 260), ph: Math.random() * 6, sp: rand(1.4, 2.6) };
+      if (q < .32) return { k: 'mast', x, y, h: rand(120, 170), ext: 260, gap: rand(160, 240), ph: Math.random() * 6 };
+      if (q < .55) { const r = rand(50, 120); return { k: 'pool', x, y, r, pts: mkBlob(r, 12, .4), ext: r + 20, gap: rand(90, 160), layer: 0 }; }
+      if (q < .8) return { k: 'farm', x, y, pts: rectPts(rand(40, 66), rand(30, 46)), h: rand(20, 36), barn: Math.random() < .6, ext: 130, gap: rand(120, 200) };
+      const r = rand(30, 60); return { k: 'tor', x, y, pts: mkBlob(r, 8, .6), h: r * rand(.4, .7), ext: r + 60, gap: rand(120, 200) };
+    }
     case 'core': {
       const q = Math.random();
       if (q < .3) return { k: 'cyl', x, y, r: rand(22, 40), h: rand(40, 90), ext: 160, gap: rand(140, 220), ph: Math.random() * 6 };
@@ -544,7 +572,8 @@ function seedBg() {
   bgVar = LV && !LV.rush ? LV.L % LEVELS_PER : 0;
   nextY = H + 220;
   while (nextY > -300) { const o = mkTerrain(nextY); terrain.push(o); nextY -= o.gap; }
-  const nC = BIOMES[curSector] === 'seas' ? 9 : 6;
+  const nC = BIOMES[curSector] === 'seas' ? 9 : BIOMES[curSector] === 'storm' ? 8 : 6;
+  seedStorm();
   for (let i = 0; i < nC; i++) clouds.push({ x: XL + Math.random() * WW, y: Math.random() * H, r: 60 + Math.random() * 90, sp: 1.6 + Math.random() });
   terrain.sort((a, b) => (a.layer || 1) - (b.layer || 1));
 }
@@ -556,7 +585,7 @@ function updBg(dt) {
   while (nextY > -300) { const o = mkTerrain(nextY); terrain.push(o); nextY -= o.gap; added = true; }
   if (added) terrain.sort((a, b) => (a.layer || 1) - (b.layer || 1));
   for (const c of clouds) { c.y += SCROLL * c.sp * dt; if (c.y - c.r > H) { c.y = -c.r * 2; c.x = XL + Math.random() * WW; } }
-  updWeather(dt);
+  updWeather(dt); updStorm(dt);
 }
 
 function blob(pts, sc) {
@@ -699,6 +728,46 @@ function drawTerrainObj(o, S) {
       trees(tx, ty, [{ x: 0, y: 0, c: o.vines }], pal.leaf);
       return; }
     case 'grove': trees(o.x, o.y, o.trees, pal.leaf); return;
+    case 'pool': { // flooded field, rain pocking the surface
+      if (SHADOW) return;
+      ctx.save(); ctx.translate(o.x, o.y);
+      ctx.fillStyle = shade(pal.water, .8); blob(o.pts, 1.06); ctx.fill();
+      ctx.fillStyle = pal.water; blob(o.pts, 1); ctx.fill();
+      ctx.strokeStyle = 'rgba(200,220,235,.22)'; ctx.lineWidth = 1;
+      for (let i = 0; i < 6; i++) { const k = (bgT * 1.6 + i / 6) % 1, a = i * 2.4 + o.r; ctx.beginPath(); ctx.arc(Math.cos(a) * o.r * .5, Math.sin(a) * o.r * .4, 2 + k * 9, 0, 7); ctx.globalAlpha = 1 - k; ctx.stroke(); }
+      ctx.globalAlpha = 1; ctx.restore();
+      return; }
+    case 'farm': {
+      prism(o.x, o.y, o.pts, o.h, pal.wall, shade(pal.roof, 1), 'rgba(255,255,255,.1)');
+      if (o.barn) prism(o.x + 44, o.y + 12, rectPts(30, 22), o.h * .8, shade(pal.wall, .9), '#6e3b2c', 'rgba(255,255,255,.1)');
+      return; }
+    case 'tor': prism(o.x, o.y, o.pts, o.h, pal.rock, shade(pal.rock, 1.15), 'rgba(255,255,255,.08)'); return;
+    case 'turbine': {
+      const [ox, oy] = lean(o.x, o.y, o.h), tx = o.x + ox, ty = o.y + oy, a0 = bgT * o.sp + o.ph;
+      if (SHADOW) {
+        const sx = o.x + o.h * .5, sy = o.y + o.h * .65;
+        ctx.lineWidth = 6; ctx.beginPath(); ctx.moveTo(o.x, o.y); ctx.lineTo(sx, sy); ctx.stroke();
+        ctx.lineWidth = 5; ctx.beginPath(); for (let i = 0; i < 3; i++) { const a = a0 + i * 2.094; ctx.moveTo(sx, sy); ctx.lineTo(sx + Math.cos(a) * 48, sy + Math.sin(a) * 48); } ctx.stroke();
+        return;
+      }
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = shade(pal.mast, .7); ctx.lineWidth = 7; ctx.beginPath(); ctx.moveTo(o.x, o.y); ctx.lineTo(tx, ty); ctx.stroke();
+      ctx.strokeStyle = shade(pal.mast, 1.2); ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(o.x - 1, o.y - 1); ctx.lineTo(tx - 1, ty - 1); ctx.stroke();
+      ctx.strokeStyle = '#e4e9ec'; ctx.lineWidth = 5; ctx.beginPath();
+      for (let i = 0; i < 3; i++) { const a = a0 + i * 2.094; ctx.moveTo(tx, ty); ctx.lineTo(tx + Math.cos(a) * 48, ty + Math.sin(a) * 48 * .85); }
+      ctx.stroke(); ctx.lineCap = 'butt';
+      ctx.fillStyle = '#c3cacf'; ctx.beginPath(); ctx.arc(tx, ty, 6, 0, 7); ctx.fill();
+      return; }
+    case 'mast': { // lattice mast; lightning likes these
+      const [ox, oy] = lean(o.x, o.y, o.h), tx = o.x + ox, ty = o.y + oy;
+      if (SHADOW) { ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(o.x, o.y); ctx.lineTo(o.x + o.h * .5, o.y + o.h * .65); ctx.stroke(); return; }
+      o.top = [tx, ty];
+      ctx.strokeStyle = pal.mast; ctx.lineWidth = 2; ctx.beginPath();
+      ctx.moveTo(o.x - 12, o.y); ctx.lineTo(tx, ty); ctx.moveTo(o.x + 12, o.y); ctx.lineTo(tx, ty);
+      for (let k = .15; k < .9; k += .15) { const w = 12 * (1 - k); ctx.moveTo(o.x - w + ox * k, o.y + oy * k); ctx.lineTo(o.x + w + ox * (k + .15), o.y + oy * (k + .15)); }
+      ctx.stroke();
+      if (Math.floor(bgT * 1.5 + o.ph) % 2) { ctx.fillStyle = '#ff4d3a'; ctx.beginPath(); ctx.arc(tx, ty, 4, 0, 7); ctx.fill(); ctx.fillStyle = 'rgba(255,77,58,.3)'; ctx.beginPath(); ctx.arc(tx, ty, 13, 0, 7); ctx.fill(); }
+      return; }
     case 'cyl': {
       const [ox, oy] = lean(o.x, o.y, o.h), r = o.r;
       if (SHADOW) { ctx.beginPath(); ctx.ellipse(o.x, o.y, r, r * .8, 0, 0, 7); ctx.fill(); ctx.beginPath(); ctx.ellipse(o.x + o.h * .5, o.y + o.h * .65, r, r * .8, 0, 0, 7); ctx.fill(); ctx.lineWidth = r * 2; ctx.beginPath(); ctx.moveTo(o.x, o.y); ctx.lineTo(o.x + o.h * .5, o.y + o.h * .65); ctx.stroke(); return; }
@@ -734,7 +803,7 @@ function drawTerrainObj(o, S) {
 // ground layers drawn under everything else
 function drawGround(S) {
   const B = BIOMES[curSector], pal = PAL[B];
-  if (B === 'peaks' || B === 'sprawl') {
+  if (B === 'peaks' || B === 'sprawl' || B === 'storm') {
     const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, pal.ground[1]); g.addColorStop(1, pal.ground[0]);
     ctx.fillStyle = g; ctx.fillRect(XL - 30, 0, WW + 60, H);
   } else {
@@ -762,7 +831,8 @@ function drawGround(S) {
     for (let y = off - 300; y < H; y += 300) for (let x = XL - 20; x < XR + 20; x += 40) ctx.fillRect(x, y + 14, 20, 2);
     ctx.fillStyle = 'rgba(70,140,60,.35)'; // moss bursting through the asphalt
     for (let i = 0; i < 14; i++) { const y = ((i * 157 + bgScroll) % (H + 60)) - 30; ctx.beginPath(); ctx.arc(XL + (i * 89) % WW, y, 10 + i % 4 * 5, 0, 7); ctx.fill(); }
-  } else if (B === 'core') {
+  } else if (B === 'storm') drawFields();
+  else if (B === 'core') {
     const off = bgScroll % 64;
     ctx.strokeStyle = 'rgba(140,150,190,.10)'; ctx.lineWidth = 1;
     ctx.beginPath();
@@ -805,7 +875,7 @@ function drawBg() {
   for (const o of terrain) drawTerrainObj(o, S);
 }
 
-const CLOUD_TINT = { isles: 'rgba(255,255,255,.07)', peaks: 'rgba(70,45,35,.22)', seas: 'rgba(210,222,232,.11)', sprawl: 'rgba(225,255,235,.06)', core: 'rgba(170,110,255,.05)' };
+const CLOUD_TINT = { isles: 'rgba(255,255,255,.07)', peaks: 'rgba(70,45,35,.22)', seas: 'rgba(210,222,232,.11)', sprawl: 'rgba(225,255,235,.06)', storm: 'rgba(48,54,66,.32)', core: 'rgba(170,110,255,.05)' };
 function drawClouds() {
   const tint = CLOUD_TINT[BIOMES[curSector]];
   ctx.save(); ctx.translate(-viewX * .3, 0);
@@ -820,7 +890,7 @@ function drawClouds() {
 
 // biome weather drawn over the action (embers, snow, pollen, data motes)
 function updWeather(dt) {
-  const B = BIOMES[curSector], want = { isles: 0, peaks: 40, seas: 70, sprawl: 24, core: 30 }[B];
+  const B = BIOMES[curSector], want = { isles: 0, peaks: 40, seas: 70, sprawl: 24, storm: 130, core: 30 }[B];
   let n = wx.filter(p => !p.smoke).length;
   while (n < want) {
     n++;
@@ -828,6 +898,7 @@ function updWeather(dt) {
     if (B === 'peaks') { p.vx = rand(-15, 15); p.vy = rand(-70, -25); p.c = Math.random() < .5 ? '#ffb347' : '#ff6a2a'; }
     if (B === 'seas') { p.vx = rand(-90, -50); p.vy = rand(220, 300); p.c = 'rgba(255,255,255,.75)'; p.sz = rand(1.5, 3); }
     if (B === 'sprawl') { p.vx = rand(-20, 20); p.vy = rand(20, 50); p.c = 'rgba(200,255,170,.55)'; p.ph = Math.random() * 6; }
+    if (B === 'storm') { p.vx = rand(-140, -100); p.vy = rand(650, 820); p.c = 'rgba(190,210,230,.45)'; }
     if (B === 'core') { p.vx = 0; p.vy = rand(-50, -20); p.c = Math.random() < .5 ? 'rgba(95,224,255,.7)' : 'rgba(176,107,255,.7)'; p.sz = 3; }
     wx.push(p);
   }
@@ -839,6 +910,11 @@ function updWeather(dt) {
   wx = wx.filter(p => p.t > 0);
 }
 function drawWeather() {
+  if (BIOMES[curSector] === 'storm') { // wind-driven rain streaks, one path
+    ctx.strokeStyle = 'rgba(190,210,230,.42)'; ctx.lineWidth = 1.3; ctx.beginPath();
+    for (const p of wx) { ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.vx * .035, p.y - p.vy * .035); }
+    ctx.stroke(); return;
+  }
   for (const p of wx) {
     if (p.smoke) { ctx.fillStyle = `rgba(70,58,54,${Math.min(.16, p.t * .06)})`; ctx.beginPath(); ctx.arc(p.x, p.y, p.sz, 0, 7); ctx.fill(); continue; }
     ctx.fillStyle = p.c;
@@ -853,6 +929,110 @@ function drawGrade() {
   if (!vignette) { vignette = ctx.createRadialGradient(W * .42, H * .4, H * .25, W / 2, H / 2, H * .75); vignette.addColorStop(0, 'rgba(0,0,0,0)'); vignette.addColorStop(1, 'rgba(0,0,0,.42)'); }
   ctx.fillStyle = vignette; ctx.fillRect(0, 0, W, H);
   ctx.restore();
+}
+
+/* ------------------------------ STORM ------------------------------ */
+// The Stormfront: dark cloud banks drift over the fight and hide anything flying beneath them, rain
+// hazes the ground, and lightning lights the moor up for a moment. Bosses can call down strikes.
+let banks = [], storm = { light: 0, next: 3, bolt: null }, strikes = [];
+const isStorm = () => BIOMES[curSector] === 'storm';
+const hash = (a, b) => { const v = Math.sin(a * 127.1 + b * 311.7) * 43758.5453; return v - Math.floor(v); };
+function mkBank(y) {
+  const r = rand(90, 140), puffs = [];
+  for (let i = 0; i < 13; i++) { const u = rand(-1, 1); puffs.push([u * r * 1.15, rand(-r * .3, r * .3) * (1 - Math.abs(u) * .5), r * rand(.32, .58) * (1 - Math.abs(u) * .35)]); }
+  return { x: rand(XL, XR), y, r, puffs, sp: rand(1.5, 2.1) };
+}
+function seedStorm() {
+  banks = []; strikes = []; storm = { light: 0, next: 3, bolt: null };
+  if (isStorm()) for (let i = 0; i < 3; i++) banks.push(mkBank(-200 + i * 380));
+}
+function boltPath(x0, y0, x1, y1) {
+  const pts = [[x0, y0]], n = 9;
+  for (let i = 1; i < n; i++) pts.push([x0 + (x1 - x0) * i / n + rand(-22, 22), y0 + (y1 - y0) * i / n]);
+  pts.push([x1, y1]); return pts;
+}
+function updStorm(dt) {
+  if (storm.light > 0) storm.light = Math.max(0, storm.light - dt * 2.2);
+  if (storm.bolt && (storm.bolt.t -= dt) <= 0) storm.bolt = null;
+  if (!isStorm()) return;
+  for (const b of banks) {
+    b.y += SCROLL * b.sp * dt; b.x -= 14 * dt;
+    if (b.y - b.r > H + 40 && (!boss || Math.random() < .5)) Object.assign(b, mkBank(-b.r - rand(60, 260)));
+  }
+  if ((storm.next -= dt) <= 0) { // ambient lightning, drawn to a mast when one is in view
+    storm.next = rand(2.5, 6.5);
+    const m = terrain.filter(o => o.k === 'mast' && o.top && o.y > 80 && o.y < H - 80);
+    const [x, y] = m.length && Math.random() < .6 ? m[0].top : [camX + rand(40, W - 40), rand(H * .25, H * .8)];
+    storm.bolt = { pts: boltPath(x + rand(-80, 80), -20, x, y), t: .28 }; storm.light = 1;
+  }
+}
+function updStrikes(dt) {
+  for (const s of strikes) {
+    if (s.tele > 0) {
+      s.tele -= dt;
+      if (s.tele <= 0) {
+        s.on = .25; shake = Math.max(shake, 5); storm.light = Math.max(storm.light, .7);
+        s.pts = boltPath(s.x + rand(-60, 60), -20, s.x, s.y);
+        if (!P.dead && (P.x - s.x) ** 2 + (P.y - s.y) ** 2 < 40 * 40) hurtPlayer(22);
+      }
+    } else s.on -= dt;
+  }
+  strikes = strikes.filter(s => s.tele > 0 || s.on > 0);
+}
+function drawFields() { // patchwork fields and hedgerows scrolling under the rain
+  const rowH = 170, off = bgScroll % rowH, base = Math.floor(bgScroll / rowH);
+  const tones = ['rgba(90,120,70,.25)', 'rgba(120,110,70,.22)', 'rgba(60,90,60,.28)', 'rgba(0,0,0,0)'];
+  ctx.strokeStyle = 'rgba(14,24,14,.6)'; ctx.lineWidth = 4;
+  for (let r = -1; r <= H / rowH + 1; r++) {
+    const k = base - r, y = off + r * rowH;
+    for (let x = XL - 40, c = 0; x < XR + 40; c++) {
+      const w = 90 + hash(k, c) * 110;
+      ctx.fillStyle = tones[Math.floor(hash(c, k) * 4)]; ctx.fillRect(x, y, w, rowH);
+      ctx.strokeRect(x, y, w, rowH); x += w;
+    }
+  }
+}
+function drawStormHaze() { // rain haze over the ground; lightning burns through it
+  const a = .5 * (1 - storm.light * .85);
+  ctx.fillStyle = `rgba(16,22,30,${a})`; ctx.fillRect(XL - 40, 0, WW + 80, H);
+  for (const e of enemies) if (e.type === 'survivor' || e.type === 'salvage') { // flares so they can still be found
+    const k = (gameT * 1.2 + e.x * .01) % 1;
+    ctx.strokeStyle = e.type === 'survivor' ? `rgba(255,120,80,${1 - k})` : `rgba(127,227,255,${1 - k})`; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(e.x, e.y, 14 + k * 26, 0, 7); ctx.stroke();
+  }
+}
+function drawBanks() {
+  const L = storm.light;
+  for (const b of banks) {
+    for (const [px, py, pr] of b.puffs) { // soft body
+      const g = ctx.createRadialGradient(b.x + px, b.y + py, pr * .2, b.x + px, b.y + py, pr);
+      g.addColorStop(0, `rgba(${64 + L * 120},${72 + L * 120},${86 + L * 120},.96)`); g.addColorStop(.7, 'rgba(52,60,74,.9)'); g.addColorStop(1, 'rgba(52,60,74,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(b.x + px, b.y + py, pr, 0, 7); ctx.fill();
+    }
+    for (const [px, py, pr] of b.puffs) { // lit tops, toward the light
+      const hx = b.x + px - pr * .25, hy = b.y + py - pr * .3, g = ctx.createRadialGradient(hx, hy, 0, hx, hy, pr * .65);
+      g.addColorStop(0, `rgba(${150 + L * 90},${160 + L * 90},${176 + L * 79},.35)`); g.addColorStop(1, 'rgba(150,160,176,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(hx, hy, pr * .65, 0, 7); ctx.fill();
+    }
+  }
+}
+function drawBolt(pts, w) {
+  for (const [lw, c] of [[w * 3, 'rgba(160,210,255,.25)'], [w, '#f2f8ff']]) {
+    ctx.strokeStyle = c; ctx.lineWidth = lw; ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p[0], p[1]) : ctx.moveTo(p[0], p[1])); ctx.stroke();
+  }
+}
+function drawStrikes() {
+  for (const s of strikes) {
+    if (s.tele > 0) {
+      const k = 1 - s.tele / .95;
+      ctx.fillStyle = `rgba(160,220,255,${.1 + k * .2})`; ctx.beginPath(); ctx.arc(s.x, s.y, 40 * k, 0, 7); ctx.fill();
+      ctx.strokeStyle = 'rgba(190,235,255,.85)'; ctx.lineWidth = 2; ctx.setLineDash([7, 6]);
+      ctx.beginPath(); ctx.arc(s.x, s.y, 40, 0, 7); ctx.stroke(); ctx.setLineDash([]);
+    } else {
+      drawBolt(s.pts, 4);
+      ctx.fillStyle = `rgba(220,240,255,${Math.min(1, s.on * 4)})`; ctx.beginPath(); ctx.arc(s.x, s.y, 46, 0, 7); ctx.fill();
+    }
+  }
 }
 
 /* ------------------------------ SPAWN ------------------------------ */
@@ -882,9 +1062,10 @@ const BOSSES = [
   { shape: 'colossus', pats: ['cone', 'mines', 'spiral', 'fan', 'cone', 'rain'] },
   { shape: 'maw',      pats: ['shards', 'beam', 'radial', 'fan', 'shards', 'minions'] },
   { shape: 'thorn',    pats: ['cross', 'summon', 'wave', 'spiral', 'fan', 'beam'] },
+  { shape: 'cell',     pats: ['bolts', 'spiral', 'fan', 'wave', 'bolts', 'minions'] },
   { shape: 'eye', phases: [['radial', 'fan', 'beam', 'shards'], ['cross', 'summon', 'cone', 'wave', 'beam'], ['spiral', 'shards', 'beam', 'mines', 'rain', 'cone']] },
 ];
-const VANGUARD_PATS = [['fan', 'radial', 'wave'], ['cone', 'fan', 'spiral'], ['shards', 'fan', 'radial'], ['cross', 'fan', 'wave'], ['beam', 'radial', 'cone']];
+const VANGUARD_PATS = [['fan', 'radial', 'wave'], ['cone', 'fan', 'spiral'], ['shards', 'fan', 'radial'], ['cross', 'fan', 'wave'], ['bolts', 'fan', 'rain'], ['beam', 'radial', 'cone']];
 function spawnBoss() {
   const S = SECTORS[LV.s], major = LV.major, cfg = BOSSES[LV.s];
   const hp = (major ? 1500 : 620) * (1 + LV.L * .5) * TM.hp * TH.hp;
@@ -1008,7 +1189,7 @@ function sparks(x, y, c, n) {
 /* ------------------------------ UPDATE ------------------------------ */
 function update(dt) {
   gameT += dt; levelT += dt;
-  updBg(dt);
+  updBg(dt); updStrikes(dt);
   if (banner) { banner.t -= dt; if (banner.t <= 0) banner = null; }
   if (shake > 0) shake = Math.max(0, shake - 40 * dt);
   if (flash > 0) flash -= dt;
@@ -1138,7 +1319,7 @@ function collectPart(p) {
   run.found.push(`${S.name} ${PART_NAMES[p.idx]} (${n}/4)`);
   texts.push({ x: clamp(P.x, camX + 140, camX + W - 140), y: P.y - 54, s: `${S.name.toUpperCase()} ${PART_NAMES[p.idx].toUpperCase()} · ${n}/4`, c: '#7fe3ff', t: 1.8, sz: 16 });
   sparks(P.x, P.y, '#7fe3ff', 18);
-  if (n === 4) { banner = { a: 'NEW SHIP', b: `${S.name} is ready in the hangar`, t: 3 }; run.newShip = S; }
+  if (n === 4) { banner = { a: 'NEW SHIP', b: `${S.name} is ready in the Fleet bay`, t: 3 }; run.newShip = S; }
 }
 
 function fireWeapons(dt) {
@@ -1213,6 +1394,19 @@ function updEnemy(e, dt) {
         else for (let i = 0; i < 3; i++) spawn({ type: 'mini', x: e.x, y: e.y + 40, counted: false, vx: rand(-160, 160), vy: 40 });
       }
       break;
+    case 'heli': // attack helicopter: drops to a station, sidesteps to new spots, then pulls out
+      if (e.t > 11) { e.y -= 130 * dt; e.vx *= Math.pow(.2, dt); if (e.y < -60) { e.dead = true; return; } }
+      else {
+        e.y += (e.ty - e.y) * Math.min(1, dt * 1.8);
+        if ((e.retT = (e.retT ?? .8) - dt) <= 0) { e.retT = rand(1.4, 2.4); e.tx = clamp(e.x0 + rand(-170, 170), XL + 40, XR - 40); }
+        e.vx = clamp(((e.tx ?? e.x) - e.x) * 1.6, -150, 150); e.x += e.vx * dt;
+      }
+      break;
+    case 'lift': // twin-rotor lifter: crawls down the screen and sets turrets down on the ground
+      e.y += 52 * dt; e.x = e.x0 + Math.sin(e.t * .5) * 30;
+      e.drops = e.drops || 0;
+      if (e.drops < 2 && e.y > 170 && e.y < H * .6 && e.t > 3 + e.drops * 2.4) { e.drops++; spawn({ type: 'turret', x: e.x, y: e.y + 10, counted: false }); texts.push({ x: e.x, y: e.y + 40, s: 'TURRET DROPPED', c: '#ff8a6a', t: .8, sz: 12 }); }
+      break;
     case 'carrier':
       e.y += (e.y < 190 ? 55 : 9) * dt; e.x = W / 2 + Math.sin(e.t * .5) * 120;
       e.spawnT -= dt;
@@ -1222,7 +1416,7 @@ function updEnemy(e, dt) {
   if (e.type === 'turret' || e.type === 'tank' || e.type === 'sniper') e.ang = e.aiming > 0 || e.burst > 0 ? e.lockA : aim(e);
   // telegraphed bursts (sniper aim line, tank double-tap)
   if (e.aiming > 0) { e.aiming -= dt; if (e.aiming <= 0) { e.burst = 3; e.burstT = 0; } }
-  if (e.burst > 0) { e.burstT -= dt; if (e.burstT <= 0) { e.burstT = e.type === 'tank' ? .18 : .09; e.burst--; eShoot(e.x, e.y + 10, e.lockA, e.burstSp || 330); } }
+  if (e.burst > 0) { e.burstT -= dt; if (e.burstT <= 0) { e.burstT = e.type === 'tank' ? .18 : e.type === 'heli' ? .13 : .09; e.burst--; eShoot(e.x, e.y + 10, e.lockA, e.burstSp || 330); } }
   // mines arm when you get close, then burst
   if (e.type === 'mine' && !P.dead) {
     if (e.arm < 0 && Math.hypot(P.x - e.x, P.y - e.y) < 85) e.arm = .7;
@@ -1249,6 +1443,8 @@ function updEnemy(e, dt) {
         case 'carrier': for (let i = 0; i < 10; i++) eShoot(e.x, e.y, i / 10 * Math.PI * 2 + e.t, 150); break;
         case 'sniper': e.aiming = .9; e.lockA = a; e.burstSp = 330; break;
         case 'tank': e.lockA = a; e.burst = 2; e.burstT = 0; e.burstSp = 190; break;
+        case 'heli': e.lockA = a; e.burst = 3; e.burstT = 0; e.burstSp = 230; break;
+        case 'lifter': for (const sx of [-1, 1]) eShoot(e.x + sx * 16, e.y, a + sx * .14, 170); break;
         case 'hive': for (let i = 0; i < 6; i++) eShoot(e.x, e.y + 30, a + (i - 2.5) * .22, 140); break;
       }
     }
@@ -1311,6 +1507,7 @@ function updBoss(e, dt) {
       case 'shards': { e.fireT = 1.0 * rage; const a = aim(e); for (let i = -1; i <= 1; i++) { const b = eShoot(e.x, e.y + 30, a + i * .35, 130); b.r = 11; b.split = .9; } break; }
       case 'beam': { e.fireT = 99; e.beam = { x: clamp(P.x, XL + 30, XR - 30), tele: 1.1, on: 0 }; break; }
       case 'cross': { e.fireT = .13 * rage; for (let k = 0; k < 4; k++) eShoot(e.x, e.y, e.pt * 1.5 + k * Math.PI / 2, 150); break; }
+      case 'bolts': { e.fireT = 1.05 * rage; for (let i = 0; i < 3; i++) strikes.push({ x: clamp(P.x + (i ? rand(-120, 120) : 0), XL + 30, XR - 30), y: clamp(P.y + (i ? rand(-90, 90) : 0), 140, H - 60), tele: .95, on: 0 }); break; }
       case 'summon': { e.fireT = 99; for (const sx of [-1, 1]) spawn({ type: 'splitter', x: e.x + sx * 120, y: e.y, counted: false }); break; }
     }
   }
@@ -1382,6 +1579,36 @@ function drawEnemy(e) {
     ctx.translate(0, bob - 3);
   }
   switch (e.type) {
+    case 'heli': {
+      ctx.rotate(clamp(e.vx / 600, -.25, .25));
+      ctx.fillStyle = col; ctx.fillRect(-2.5, -38, 5, 30); // tail boom
+      ctx.fillRect(-9, -40, 18, 4);
+      ctx.fillStyle = '#3a3f4a'; ctx.fillRect(-19, -2, 38, 6); // stub wings and rocket pods
+      for (const sx of [-1, 1]) { ctx.beginPath(); ctx.arc(sx * 18, 1, 4, 0, 7); ctx.fill(); }
+      ctx.fillStyle = col; ctx.beginPath(); ctx.ellipse(0, 4, 11, 18, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = SHADOW ? '#000' : 'rgba(150,220,255,.85)'; ctx.beginPath(); ctx.ellipse(0, 13, 6, 7, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.08)'; ctx.beginPath(); ctx.arc(0, 2, 32, 0, 7); ctx.fill();
+      ctx.strokeStyle = '#1d2027'; ctx.lineWidth = 3;
+      const ra = gameT * 28 + e.x0; ctx.beginPath();
+      for (const k of [0, Math.PI / 2]) { ctx.moveTo(Math.cos(ra + k) * 32, 2 + Math.sin(ra + k) * 32); ctx.lineTo(-Math.cos(ra + k) * 32, 2 - Math.sin(ra + k) * 32); }
+      ctx.stroke();
+      ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(-7, -38 + Math.sin(ra * 1.7) * 6); ctx.lineTo(7, -38 - Math.sin(ra * 1.7) * 6); ctx.stroke();
+      ctx.fillStyle = '#ff3b2e'; ctx.beginPath(); ctx.arc(0, 2, 3, 0, 7); ctx.fill();
+      break; }
+    case 'lifter': {
+      ctx.fillStyle = '#3a3f4a'; rr(-15, -40, 30, 80, 10); ctx.fill();
+      ctx.fillStyle = col; rr(-12, -37, 24, 74, 9); ctx.fill();
+      ctx.fillStyle = '#2b2f38'; ctx.fillRect(-8, -6, 16, 14);
+      ctx.fillStyle = SHADOW ? '#000' : 'rgba(150,220,255,.8)'; rr(-8, 28, 16, 8, 3); ctx.fill();
+      ctx.strokeStyle = '#1d2027'; ctx.lineWidth = 3;
+      for (const [cy, dir] of [[-26, 1], [26, -1]]) {
+        ctx.fillStyle = 'rgba(255,255,255,.07)'; ctx.beginPath(); ctx.arc(0, cy, 30, 0, 7); ctx.fill();
+        const ra = gameT * 22 * dir + e.x0; ctx.beginPath();
+        for (let k = 0; k < 3; k++) { const q = ra + k * 2.094; ctx.moveTo(0, cy); ctx.lineTo(Math.cos(q) * 30, cy + Math.sin(q) * 30); }
+        ctx.stroke();
+        ctx.fillStyle = '#ff3b2e'; ctx.beginPath(); ctx.arc(0, cy, 3, 0, 7); ctx.fill();
+      }
+      break; }
     case 'scout':
       ctx.fillStyle = col; poly([[0, 16], [14, -6], [6, -12], [0, -6], [-6, -12], [-14, -6]]); ctx.fill();
       ctx.fillStyle = '#ffd34d'; ctx.beginPath(); ctx.arc(0, 0, 3, 0, 7); ctx.fill(); break;
@@ -1526,6 +1753,24 @@ function drawBoss(e) {
       ctx.strokeStyle = dark; ctx.lineWidth = 4;
       for (let i = 0; i < 5; i++) { const a = i / 5 * Math.PI * 2 - e.spin * .3; ctx.beginPath(); ctx.arc(Math.cos(a) * R * .45, Math.sin(a) * R * .45, R * .2, 0, 7); ctx.stroke(); }
       break; }
+    case 'cell': { // a thunderhead with an anemometer crown and arcing coils
+      ctx.fillStyle = dark;
+      for (const [cx, cy, cr] of [[-.78, -.05, .52], [.78, -.05, .52], [-.38, -.48, .58], [.38, -.48, .58], [0, .3, .68]]) { ctx.beginPath(); ctx.arc(cx * R, cy * R, cr * R, 0, 7); ctx.fill(); }
+      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(0, 0, R * .62, 0, 7); ctx.fill();
+      ctx.strokeStyle = '#c9d3dc'; ctx.lineWidth = 4; ctx.fillStyle = '#e8eef3';
+      for (let i = 0; i < 3; i++) {
+        const a = e.spin * 2.2 + i * 2.094, ex = Math.cos(a) * R * .95, ey = Math.sin(a) * R * .95;
+        ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(ex, ey); ctx.stroke();
+        ctx.beginPath(); ctx.arc(ex, ey, R * .13, 0, 7); ctx.fill();
+      }
+      if (!SHADOW && Math.sin(gameT * 11) > .2) {
+        const a = Math.random() * 6.3, b = a + rand(1, 2.5);
+        ctx.strokeStyle = 'rgba(190,235,255,.9)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(Math.cos(a) * R * .9, Math.sin(a) * R * .7);
+        for (let k = 1; k <= 4; k++) { const t = a + (b - a) * k / 4; ctx.lineTo(Math.cos(t) * R * rand(.7, 1.05), Math.sin(t) * R * rand(.55, .85)); }
+        ctx.stroke();
+      }
+      coreR = R * .3;
+      break; }
     case 'eye': {
       ctx.fillStyle = dark;
       for (let i = 0; i < 6; i++) { const a = i / 6 * Math.PI * 2 + e.spin * (e.phase === 2 ? 1.6 : .7); ctx.save(); ctx.rotate(a); ctx.fillRect(R * .95, -R * .14, R * .32, R * .28); ctx.restore(); }
@@ -1605,6 +1850,7 @@ function render() {
   viewX = camX; ctx.translate(-camX, 0);
   drawBg();
   for (const e of enemies) if (e.ground) drawEnemy(e);
+  if (isStorm()) drawStormHaze();
   drawClouds(); drawGrade();
   shadowPass(() => {
     for (const e of enemies) if (!e.ground) e.boss ? drawBoss(e) : drawEnemy(e);
@@ -1627,6 +1873,8 @@ function render() {
     }
   }
   for (const e of enemies) if (!e.ground) e.boss ? drawBoss(e) : drawEnemy(e);
+  if (isStorm()) drawBanks(); // cloud banks hide the drones beneath them (their fire stays visible)
+  drawStrikes();
   for (const e of enemies) {
     if (e.aiming > 0) {
       ctx.strokeStyle = `rgba(255,80,60,${.3 + .6 * (1 - e.aiming / .9)})`; ctx.lineWidth = 1.5; ctx.setLineDash([8, 6]);
@@ -1685,11 +1933,13 @@ function render() {
   }
   ctx.globalAlpha = 1;
   drawWeather();
+  if (storm.bolt) drawBolt(storm.bolt.pts, 2.5);
   // floating text
   ctx.textAlign = 'center';
   for (const t of texts) { ctx.globalAlpha = Math.min(1, t.t * 2); ctx.fillStyle = t.c; ctx.font = `700 ${t.sz || 14}px Orbitron, sans-serif`; ctx.fillText(t.s, t.x, t.y); }
   ctx.globalAlpha = 1;
   ctx.restore(); viewX = 0;
+  if (storm.light > 0) { ctx.fillStyle = `rgba(215,228,255,${storm.light * .22})`; ctx.fillRect(0, 0, W, H); }
   if (flash > 0) { ctx.fillStyle = `rgba(200,240,255,${Math.min(.6, flash)})`; ctx.fillRect(0, 0, W, H); }
   drawHUD();
   if (banner) {
@@ -1760,7 +2010,8 @@ function finishLevel(success) {
   $('resLines').innerHTML = lines.map(l => `<div><span>${l[0]}</span><b>${l[1] == null ? '✓' : '+' + fmt(l[1])}</b></div>`).join('') +
     (unlockedTier ? `<div><span style="color:#3fd8ff">🔓 ${TIERS[unlockedTier].name} unlocked for mission ${LV.label.split(' ')[0]}</span><span></span></div>` : '') +
     `<div class="total"><span>Total</span><span>★ ${fmt(total)}</span></div>`;
-  $('resQuip').textContent = run.newShip ? `I have finished assembling the ${run.newShip.name}. Select it in the hangar. I would test it myself, but, well.` : unlockedTier ? `Every medal. I have prepared ${TIERS[unlockedTier].name}: same mission, nastier Legion, better pay.` : pick(success ? QUIPS.win : QUIPS.lose);
+  $('resHangar').textContent = run.newShip ? 'Fleet' : 'Hangar';
+  $('resQuip').textContent = run.newShip ? `I have finished assembling the ${run.newShip.name}. Select it in the Fleet bay. I would test it myself, but, well.` : unlockedTier ? `Every medal. I have prepared ${TIERS[unlockedTier].name}: same mission, nastier Legion, better pay.` : pick(success ? QUIPS.win : QUIPS.lose);
   lastLevel = LV;
   const nextL = !LV.rush && !tier && success && L + 1 < NLEVELS ? L + 1 : null;
   $('resNext').textContent = unlockedTier ? `Fly ${TIERS[unlockedTier].name}` : nextL != null ? 'Next mission' : 'Mission board';
@@ -1775,7 +2026,7 @@ function finishLevel(success) {
 
 /* ------------------------------ UI ------------------------------ */
 const pick = a => a[Math.floor(Math.random() * a.length)];
-const SCREENS = ['menu', 'map', 'hangar', 'ach', 'howto', 'story', 'results', 'pause'];
+const SCREENS = ['menu', 'map', 'hangar', 'fleet', 'ach', 'howto', 'story', 'results', 'pause'];
 function showScreen(id) { SCREENS.forEach(s => $(s).classList.toggle('hidden', s !== id)); }
 function refreshStars() { $('menuStars').textContent = fmt(save.stars); document.querySelectorAll('.starsNow').forEach(e => e.textContent = fmt(save.stars)); }
 
@@ -1786,6 +2037,7 @@ function go(id) {
   if (id === 'menu') $('menuQuip').textContent = pick(QUIPS.menu);
   if (id === 'map') buildMap();
   if (id === 'hangar') { $('hangarQuip').textContent = pick(QUIPS.hangar); buildHangar(); }
+  if (id === 'fleet') { const n = SHIPS.filter(x => shipOwned(x.id)).length; $('fleetQuip').textContent = `${n} of ${SHIPS.length} ships assembled. Parts turn up in blue salvage crates on the missions listed.`; buildFleetScreen(); }
   if (id === 'ach') buildAch();
   if (id === 'howto') buildHowto();
   showScreen(id);
@@ -1806,7 +2058,7 @@ function nextStory() {
 }
 $('storyNext').addEventListener('click', nextStory);
 
-function unlocked(L) { return L === 0 || !!save.lv[L - 1]?.done; }
+function unlocked(L) { return L === 0 || !!save.lv[L - 1]?.done || !!save.lv[L]?.done; }
 function startLevel(L, tier = 0) {
   $('tierSheet').classList.add('hidden');
   const s = Math.floor(L / LEVELS_PER);
@@ -1893,20 +2145,26 @@ function buildFleet() {
   }).join('');
 }
 
+function buildFleetScreen() {
+  $('fleetList').innerHTML = buildFleet();
+  $('fleetList').querySelectorAll('[data-ship]').forEach(b => b.onclick = () => {
+    if (!shipOwned(b.dataset.ship)) return;
+    save.ship = b.dataset.ship; persist();
+    const top = $('fleetList').scrollTop; buildFleetScreen(); $('fleetList').scrollTop = top;
+    $('fleetQuip').textContent = `${shipById(save.ship).name} prepped and fuelled. Your upgrades carry over.`;
+  });
+}
+
 function buildHangar() {
-  $('upgList').innerHTML = `<h3 class="sect">Fleet</h3>${buildFleet()}<h3 class="sect">Upgrades <small>(every upgrade applies to every ship)</small></h3>` + UPG.map(u => {
+  const cur = shipById(save.ship);
+  $('upgList').innerHTML = `<div class="flying"><img src="${shipIcon(cur.id)}" alt=""><span>Flying the <b>${cur.name}</b>. Every upgrade applies to every ship.</span><button class="btn small" data-go2="fleet">Fleet ›</button></div>` + UPG.map(u => {
     const l = ul(u.id), maxed = l >= u.max, c = upCost(u);
     return `<div class="upg"><h4>${u.name}</h4><div class="d">${u.desc}</div>
       <div class="fx">${u.fx(l)}${maxed ? '' : `  →  <span style="color:#fff">${u.fx(l + 1)}</span>`}</div>
       <div class="lvlbar">${Array.from({ length: u.max }, (_, i) => `<i class="${i < l ? 'on' : ''}"></i>`).join('')}</div>
       <div class="buy"><button class="btn small" data-u="${u.id}" ${maxed || save.stars < c ? 'disabled' : ''}>${maxed ? 'MAX' : 'Upgrade'}</button>${maxed ? '' : `<span>★ ${fmt(c)}</span>`}</div></div>`;
   }).join('');
-  $('upgList').querySelectorAll('[data-ship]').forEach(b => b.onclick = () => {
-    if (!shipOwned(b.dataset.ship)) return;
-    save.ship = b.dataset.ship; persist();
-    const top = $('upgList').scrollTop; buildHangar(); $('upgList').scrollTop = top;
-    $('hangarQuip').textContent = `${shipById(save.ship).name} prepped and fuelled. Your upgrades carry over.`;
-  });
+  $('upgList').querySelector('[data-go2]').onclick = () => go('fleet');
   $('upgList').querySelectorAll('[data-u]').forEach(b => b.onclick = () => {
     const u = UPG.find(x => x.id === b.dataset.u), c = upCost(u);
     if (save.stars < c || ul(u.id) >= u.max) return;
@@ -1995,7 +2253,7 @@ cv.addEventListener('pointerup', endPtr); cv.addEventListener('pointercancel', e
 
 /* ------------------------------ BOOT ------------------------------ */
 $('resRetry').onclick = () => { if (lastLevel) lastLevel.rush ? newRun(genRush(lastLevel.s)) : startLevel(lastLevel.L, lastLevel.tier || 0); };
-$('resHangar').onclick = () => go('hangar');
+$('resHangar').onclick = () => go(run && run.newShip ? 'fleet' : 'hangar');
 
 seedBg();
 let last = performance.now();
