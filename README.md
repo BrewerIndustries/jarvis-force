@@ -114,6 +114,9 @@ Everything is procedural Canvas 2D with a pseudo-3D look:
   panel seams, rivets, wing stripes, nozzle metal, canopy gradient and specular) and then stamped, with a black
   silhouette of the same bake feeding the shadow layer. Animated parts stay live: afterburner bloom and flame,
   blinking port/starboard nav lights. Fighters and gunships get a rim light, a canopy and engine glow.
+- Bosses carry battle damage as their hull fails: scorch patches past 28%, smoke past 50%, open fire past 78%,
+  plus a thruster wash under the hull. The HUD is drawn on glass panels (`panel()`) with a segmented hull readout,
+  a glowing star counter and a boss plate with a bright leading edge. Stars on the field carry a warm bloom.
 - Buildings are prisms with windows mapped onto their visible walls (`wallWindows()`): each wall is a quad, so a
   window is a small quad interpolated between its base edge and the leaned top edge. City blocks and Legion towers
   use it; sea rigs get cross-braced legs, a reflection and a helipad (skipped on Legion-held rigs, which carry the

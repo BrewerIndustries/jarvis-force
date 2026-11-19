@@ -544,6 +544,7 @@ function drawBloom() {
 const SPR = {
   fire: softSprite(64, [[0, 'rgba(255,248,214,1)'], [.16, 'rgba(255,206,96,1)'], [.4, 'rgba(248,126,30,.88)'], [.72, 'rgba(196,56,14,.3)'], [1, 'rgba(90,24,6,0)']]),
   smoke: softSprite(64, [[0, 'rgba(182,176,168,.72)'], [.45, 'rgba(116,110,104,.4)'], [1, 'rgba(58,54,54,0)']]),
+  sun: softSprite(64, [[0, 'rgba(255,246,196,.95)'], [.38, 'rgba(255,206,70,.42)'], [1, 'rgba(255,180,40,0)']]),
 };
 
 const PAL = {
@@ -2163,6 +2164,12 @@ function drawBoss(e) {
   const S = SECTORS[LV.s], col = e.flash > 0 ? '#fff' : bodyGrad(e.r, S.enemy), R = e.r, dark = bodyGrad(e.r * 1.3, '#3d4250');
   const sc = k => q => [q[0] * R * k, q[1] * R * k];
   ctx.save(); ctx.translate(e.x, e.y);
+  if (!SHADOW) { // thruster wash under the hull
+    ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .32;
+    ctx.drawImage(SPR.fire, -R * .62, R * .42, R * .55, R * .7);
+    ctx.drawImage(SPR.fire, R * .07, R * .42, R * .55, R * .7);
+    ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  }
   let coreR = R * .32;
   switch (e.shape) {
     case 'manta': {
@@ -2226,6 +2233,21 @@ function drawBoss(e) {
       coreR = R * .3;
       break; }
   }
+  // battle damage: scorch patches, then smoke, then open fire as the hull fails
+  if (!SHADOW) {
+    const dmg = 1 - e.hp / e.maxHp;
+    if (dmg > .28) {
+      const n = dmg > .7 ? 5 : 3;
+      for (let i = 0; i < n; i++) {
+        const a = i * 2.399 + e.spin * .18, rr2 = R * (.45 + (i % 3) * .13);
+        const dx = Math.cos(a) * rr2, dy = Math.sin(a) * rr2 * .8;
+        ctx.fillStyle = `rgba(18,14,12,${.22 + dmg * .3})`;
+        ctx.beginPath(); ctx.arc(dx, dy, R * (.10 + (i % 2) * .05), 0, 7); ctx.fill();
+        if (dmg > .5 && Math.random() < .07) parts.push({ kind: 'smoke', x: e.x + dx, y: e.y + dy, vx: rand(-14, 14), vy: rand(-26, -8), t: 1.1, max: 1.1, sz: rand(8, 14), grow: 24, drag: .94 });
+        if (dmg > .78 && Math.random() < .06) parts.push({ kind: 'fire', x: e.x + dx, y: e.y + dy, vx: rand(-12, 12), vy: rand(-24, -6), t: .22, max: .22, sz: rand(10, 16), grow: 12 });
+      }
+    }
+  }
   ctx.fillStyle = '#1b1e25'; ctx.beginPath(); ctx.arc(0, 0, coreR * 1.2, 0, 7); ctx.fill();
   const pulse = .6 + Math.sin(gameT * 6) * .4;
   const eg = ctx.createRadialGradient(0, 0, 2, 0, 0, coreR); eg.addColorStop(0, '#fff'); eg.addColorStop(.3, `rgba(255,60,40,${pulse})`); eg.addColorStop(1, 'rgba(255,40,30,0)');
@@ -2233,47 +2255,88 @@ function drawBoss(e) {
   ctx.restore();
 }
 
+// a glass panel: dark fill, a top-edge sheen and a hairline rim, so the HUD sits on the painted
+// world instead of looking like flat rectangles pasted over it
+function panel(x, y, w, h, r = 8) {
+  ctx.fillStyle = 'rgba(6,14,26,.74)'; rr(x, y, w, h, r); ctx.fill();
+  const g = ctx.createLinearGradient(0, y, 0, y + h);
+  g.addColorStop(0, 'rgba(150,205,255,.14)'); g.addColorStop(.45, 'rgba(150,205,255,.02)'); g.addColorStop(1, 'rgba(0,0,0,.20)');
+  ctx.fillStyle = g; rr(x, y, w, h, r); ctx.fill();
+  ctx.strokeStyle = 'rgba(150,210,255,.20)'; ctx.lineWidth = 1;
+  rr(x + .5, y + .5, w - 1, h - 1, r); ctx.stroke();
+}
+function segmentedBar(x, y, w, h, k, col) {
+  const segs = 10, gap = 2, sw = (w - gap * (segs - 1)) / segs;
+  for (let i = 0; i < segs; i++) {
+    const sx = x + i * (sw + gap);
+    ctx.fillStyle = 'rgba(16,34,52,.92)'; ctx.fillRect(sx, y, sw, h);
+    const f = Math.min(1, Math.max(0, (k - i / segs) * segs));
+    if (f > 0) {
+      ctx.fillStyle = col; ctx.fillRect(sx, y, sw * f, h);
+      ctx.fillStyle = 'rgba(255,255,255,.22)'; ctx.fillRect(sx, y, sw * f, Math.max(1, h * .3));
+      ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.fillRect(sx, y + h * .68, sw * f, h * .32);
+    }
+  }
+}
 function drawHUD() {
-  // hull
-  ctx.fillStyle = 'rgba(5,12,24,.7)'; rr(12, 12, 210, ST.shield ? 40 : 28, 8); ctx.fill();
-  ctx.fillStyle = '#122437'; ctx.fillRect(22, 20, 190, 12);
-  const hp = Math.max(0, P.hp / ST.maxHp);
-  ctx.fillStyle = hp > .5 ? '#4cdf8a' : hp > .25 ? '#ffcc33' : '#ff5a4f'; ctx.fillRect(22, 20, 190 * hp, 12);
-  if (ST.shield) { ctx.fillStyle = '#122437'; ctx.fillRect(22, 36, 190, 7); ctx.fillStyle = '#3fd8ff'; ctx.fillRect(22, 36, 190 * P.shield / ST.shield, 7); }
+  const hp = clamp(P.hp / ST.maxHp, 0, 1), shield = !!ST.shield;
+  panel(12, 12, 210, shield ? 44 : 30, 9);
+  segmentedBar(24, 21, 186, 11, hp, hp > .5 ? '#4cdf8a' : hp > .25 ? '#ffcc33' : '#ff5a4f');
+  if (shield) {
+    const sk = clamp(P.shield / ST.shield, 0, 1);
+    ctx.fillStyle = 'rgba(16,34,52,.92)'; ctx.fillRect(24, 38, 186, 6);
+    ctx.fillStyle = '#3fd8ff'; ctx.fillRect(24, 38, 186 * sk, 6);
+    ctx.fillStyle = 'rgba(210,245,255,.45)'; ctx.fillRect(24, 38, 186 * sk, 2);
+  }
   // stars
-  ctx.fillStyle = 'rgba(5,12,24,.7)'; rr(236, 12, 150, 34, 8); ctx.fill();
-  ctx.fillStyle = '#ffcc33'; star(256, 29, 10, 0); ctx.fill();
-  ctx.font = '700 20px Orbitron, sans-serif'; ctx.textAlign = 'left'; ctx.fillText(fmt(run.stars), 272, 37);
+  panel(236, 12, 150, 34, 9);
+  ctx.fillStyle = '#ffcc33'; star(256, 29, 10, Math.sin(gameT * 1.1) * .12); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.beginPath(); ctx.arc(253, 26, 1.6, 0, 7); ctx.fill();
+  ctx.font = '700 20px Orbitron, sans-serif'; ctx.textAlign = 'left'; ctx.fillStyle = '#fff2c0';
+  ctx.fillText(fmt(run.stars), 272, 37);
   // combo
   if (run.combo > 1) {
     ctx.textAlign = 'center'; ctx.font = '700 15px Orbitron, sans-serif';
-    ctx.fillStyle = `rgba(255,${200 - Math.min(run.combo, 60) * 2},80,${.5 + run.comboT / 3.2})`;
+    ctx.fillStyle = `rgba(255,${200 - Math.min(run.combo, 60) * 2},80,${.55 + run.comboT / 3.2})`;
     ctx.fillText(`CHAIN ${run.combo}  ×${comboMult().toFixed(2)}`, W / 2, 66);
-    ctx.fillStyle = 'rgba(255,200,80,.6)'; ctx.fillRect(W / 2 - 50, 72, 100 * run.comboT / 1.6, 3);
+    const cw = 100 * run.comboT / 1.6;
+    ctx.fillStyle = 'rgba(255,200,80,.22)'; ctx.fillRect(W / 2 - 50, 72, 100, 3);
+    ctx.fillStyle = 'rgba(255,214,120,.85)'; ctx.fillRect(W / 2 - 50, 72, cw, 3);
   }
   // pause
-  ctx.fillStyle = 'rgba(5,12,24,.7)'; rr(W - 52, 12, 40, 40, 8); ctx.fill();
+  panel(W - 52, 12, 40, 40, 9);
   ctx.fillStyle = '#dbe9f7'; ctx.fillRect(W - 40, 22, 5, 20); ctx.fillRect(W - 29, 22, 5, 20);
   // survivors / kills
   ctx.font = '600 14px Rajdhani, sans-serif'; ctx.textAlign = 'left'; ctx.fillStyle = '#9fb7cf';
   if (!LV.rush) ctx.fillText(`🛟 ${run.rescued}/${LV.survivors}   🎯 ${run.kills}/${run.total}`, 16, H - 18);
   // bomb button
-  const bx = W - 62, by = H - 72;
-  ctx.fillStyle = run.bombs ? 'rgba(20,90,130,.85)' : 'rgba(30,40,55,.7)'; ctx.beginPath(); ctx.arc(bx, by, 38, 0, 7); ctx.fill();
-  ctx.strokeStyle = run.bombs ? '#3fd8ff' : '#33465c'; ctx.lineWidth = 3; ctx.stroke();
+  const bx = W - 62, by = H - 72, ready = run.bombs > 0;
+  const bg = ctx.createRadialGradient(bx, by - 8, 4, bx, by, 40);
+  bg.addColorStop(0, ready ? 'rgba(60,170,220,.95)' : 'rgba(40,54,70,.8)'); bg.addColorStop(1, ready ? 'rgba(12,50,76,.9)' : 'rgba(20,28,40,.8)');
+  ctx.fillStyle = bg; ctx.beginPath(); ctx.arc(bx, by, 38, 0, 7); ctx.fill();
+  ctx.strokeStyle = ready ? '#3fd8ff' : '#33465c'; ctx.lineWidth = 3; ctx.stroke();
+  ctx.strokeStyle = ready ? 'rgba(190,245,255,.55)' : 'rgba(90,110,130,.4)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.arc(bx, by, 32, 0, 7); ctx.stroke();
   ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.font = '900 14px Orbitron, sans-serif'; ctx.fillText('EMP', bx, by + 1);
   ctx.font = '700 13px Orbitron, sans-serif'; ctx.fillStyle = '#ffcc33'; ctx.fillText(`×${run.bombs}`, bx, by + 18);
-  // boss bar
+  // boss bar: name plate plus a segmented hull readout
   if (boss && !boss.dead && boss.y > 0) {
-    ctx.fillStyle = 'rgba(5,12,24,.75)'; rr(40, 88, W - 80, 26, 6); ctx.fill();
-    ctx.fillStyle = '#ff5a4f'; ctx.fillRect(48, 104, (W - 96) * Math.max(0, boss.hp / boss.maxHp), 6);
-    ctx.fillStyle = '#fff'; ctx.font = '700 11px Orbitron, sans-serif'; ctx.textAlign = 'center'; ctx.fillText(boss.name, W / 2, 99);
+    panel(40, 86, W - 80, 30, 8);
+    const k = clamp(boss.hp / boss.maxHp, 0, 1);
+    ctx.fillStyle = 'rgba(16,34,52,.9)'; ctx.fillRect(48, 104, W - 96, 7);
+    const bgr = ctx.createLinearGradient(48, 0, W - 48, 0);
+    bgr.addColorStop(0, '#ff8a3d'); bgr.addColorStop(.6, '#ff5a4f'); bgr.addColorStop(1, '#c62b3c');
+    ctx.fillStyle = bgr; ctx.fillRect(48, 104, (W - 96) * k, 7);
+    ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.fillRect(48 + (W - 96) * k - 2, 103, 2, 9);
+    ctx.fillStyle = '#f4f9ff'; ctx.font = '700 11px Orbitron, sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(boss.name, W / 2, 99);
   }
   // laser charge
   if (ST.las) {
     const c = P.lasOn > 0 ? 1 : 1 - P.lasT / ST.lasInt;
-    ctx.fillStyle = 'rgba(5,12,24,.7)'; ctx.fillRect(12, ST.shield ? 56 : 44, 80, 6);
-    ctx.fillStyle = P.lasOn > 0 ? '#fff' : '#b48cff'; ctx.fillRect(12, ST.shield ? 56 : 44, 80 * clamp(c, 0, 1), 6);
+    const ly = shield ? 60 : 48;
+    ctx.fillStyle = 'rgba(5,12,24,.7)'; ctx.fillRect(12, ly, 80, 6);
+    ctx.fillStyle = P.lasOn > 0 ? '#fff' : '#b48cff'; ctx.fillRect(12, ly, 80 * clamp(c, 0, 1), 6);
   }
 }
 function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h); }
@@ -2306,8 +2369,13 @@ function render() {
   for (const p of pickups) {
     if (p.kind === 'star') {
       const r = p.v >= 10 ? 11 : p.v >= 5 ? 9 : 6;
+      ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .5;
+      ctx.drawImage(SPR.sun, p.x - r * 2.1, p.y - r * 2.1, r * 4.2, r * 4.2);
+      ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
       ctx.fillStyle = p.v >= 10 ? '#fff1a8' : '#ffcc33';
       star(p.x, p.y, r, p.spin + p.t * 3); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,.8)';
+      star(p.x - r * .18, p.y - r * .18, r * .42, p.spin + p.t * 3); ctx.fill();
     } else if (p.kind === 'part') {
       const bob = Math.sin(p.t * 5) * 3;
       ctx.fillStyle = 'rgba(127,227,255,.25)'; ctx.beginPath(); ctx.arc(p.x, p.y + bob, 22, 0, 7); ctx.fill();
