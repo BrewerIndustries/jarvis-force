@@ -109,7 +109,13 @@ an auto-revive upgrade, and the stars-kept-on-death rule.
 Everything is procedural Canvas 2D with a pseudo-3D look:
 - Terrain prisms (`prism()`) lean away from the screen centre as they scroll past, and walls are shaded from a top-left light.
 - Shadows for terrain, jets and bosses are drawn into one black offscreen layer (`shadowPass()`) and composited once.
-- Ships and drones use gradient body shading. The jet has an afterburner bloom and blinking port/starboard nav lights.
+- Ships and drones use gradient body shading. The jet has panel seams, a clipping sheen, a rim light, a canopy
+  specular streak, an afterburner bloom and blinking port/starboard nav lights. Fighters and gunships get a rim light
+  and engine glow.
+- Open water gets a specular sun path of drifting dashes in addition to the crest highlights.
+- **Bloom:** the bright parts of the frame (flashes, explosions, engine glow, sun glitter) go through a quarter-size
+  contrast-and-blur pass and are added back, so lit things bleed light without washing out the sea. Composited
+  before the HUD, and skipped on any browser whose canvas has no `filter`.
 - **Explosions** (`boom()`) are layered on separate clocks: a white flash, a fireball that cools from yellow to red,
   tumbling shrapnel with gravity, embers, a flat shockwave, and smoke that billows up as the fire dies. Fire and smoke
   are pre-rendered sprites stamped per particle, so no radial gradients are built per frame. Counts drop when the
@@ -184,3 +190,11 @@ Save `sv: 2` marks the six-sector layout. Older saves (no `sv`) are migrated on 
 16–19 to 20–23, along with its Star Rush clear and story flag.
 
 Save adds `ships: { <id>: [4 part flags] }` and `ship` (selected id). Part pickups write immediately via `collectPart()`.
+
+Toughness pass (2026-11-18): enemies were melting. Every drone's HP now scales `1 + L*.8 + sector*.1`
+(was `1 + L*.42`), so a fighter at 3-1 with 35% upgrades takes 0.61s instead of 0.35s, a gunship 2.5s instead of
+1.45s, and a carrier 8.1s instead of 4.7s. Elites are 2.1x HP and start at 5% + 4.5% per sector, enemy fire is
+faster (sector term .24) and waves arrive a little closer together. Cadet was softened less (damage .65, bullet
+speed .84, fire rate .85). Bosses keep their own, gentler HP curve so boss fights stay 45-60s. The per-blast camera
+shake added with the effects pass was removed: with several kills a second it never settled, which read as a
+bouncing screen.

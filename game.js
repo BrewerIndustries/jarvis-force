@@ -109,7 +109,7 @@ const SECTORS = [
 const LEVELS_PER = 4, NLEVELS = SECTORS.length * LEVELS_PER;
 
 const DIFFS = [
-  { name: 'Cadet', dmg: 0.55, bspd: 0.8, fire: 0.75, stars: 1.0, note: 'Gentle. Slower bullets, light damage.' },
+  { name: 'Cadet', dmg: 0.65, bspd: 0.84, fire: 0.85, stars: 1.0, note: 'Gentle. Slower bullets, light damage.' },
   { name: 'Pilot', dmg: 0.85, bspd: 0.92, fire: 0.9, stars: 1.3, note: '+30% stars. The intended ride.' },
   { name: 'Ace', dmg: 1.25, bspd: 1.05, fire: 1.1, stars: 1.7, note: '+70% stars. For pilots who want a fight.' },
 ];
@@ -416,7 +416,7 @@ function genLevel(L, tier = 0) {
   if (s >= 3) pool.push('bomber', 'turrets', 'splitters', 'snipers', 'helis');
   if (s >= 4) pool.push('tanks', 'mines');
   let t = 2.5;
-  while (t < len) { addWave(tl, pool[Math.floor(R() * pool.length)], t, R, s); t += (3.6 - Math.min(1.3, L * .065)) + R() * 1.3; }
+  while (t < len) { addWave(tl, pool[Math.floor(R() * pool.length)], t, R, s); t += (3.35 - Math.min(1.35, L * .07)) + R() * 1.15; }
   if (idx >= 1 || s >= 1) addWave(tl, 'carrier', len * .55, R, s);
   // higher tiers: the same mission, plus extra seeded waves layered on top
   if (tier > 0) {
@@ -518,6 +518,24 @@ function softSprite(size, stops) {
   g.fillStyle = rg; g.fillRect(0, 0, size, size);
   return c;
 }
+// bloom: the bright parts of a frame (muzzle flashes, explosions, engine glow, sun glitter) are
+// copied into a quarter-size buffer with a contrast boost and blur, then added back. It is what makes
+// a flat canvas scene read as lit rather than painted.
+const BLOOM_W = Math.round(W / 4), BLOOM_H = Math.round(H / 4);
+const bloomCv = document.createElement('canvas'); bloomCv.width = BLOOM_W; bloomCv.height = BLOOM_H;
+const bloomCtx = bloomCv.getContext('2d');
+let bloomOK = typeof bloomCtx.filter === 'string';
+function drawBloom() {
+  if (!bloomOK) return;
+  bloomCtx.globalCompositeOperation = 'copy';
+  bloomCtx.filter = 'brightness(1.15) contrast(7) blur(2.5px)';
+  try { bloomCtx.drawImage(cv, 0, 0, BLOOM_W, BLOOM_H); } catch (e) { bloomOK = false; return; }
+  bloomCtx.filter = 'none';
+  ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .12;
+  ctx.drawImage(bloomCv, 0, 0, W, H);
+  ctx.restore();
+}
+
 const SPR = {
   fire: softSprite(64, [[0, 'rgba(255,248,214,1)'], [.16, 'rgba(255,206,96,1)'], [.4, 'rgba(248,126,30,.88)'], [.72, 'rgba(196,56,14,.3)'], [1, 'rgba(90,24,6,0)']]),
   smoke: softSprite(64, [[0, 'rgba(182,176,168,.72)'], [.45, 'rgba(116,110,104,.4)'], [1, 'rgba(58,54,54,0)']]),
@@ -926,6 +944,20 @@ function drawGround(S) {
     const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, S.sea[1]); g.addColorStop(1, S.sea[0]);
     ctx.fillStyle = g; ctx.fillRect(XL - 30, 0, WW + 60, H);
   }
+  if (B === 'isles' || B === 'seas') {
+    // specular sun path: a loose column of bright dashes that shifts slowly, the cheapest way to
+    // make the water read as a surface instead of a flat fill
+    const sunX = W * .66 + Math.sin(bgT * .17) * 26;
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 30; i++) {
+      const y = ((i * 41 + bgScroll * .55) % (H + 24)) - 12;
+      const w = 12 + Math.abs(Math.sin(i * 2.3 + bgT * .8)) * 26;
+      const a = .035 + .075 * Math.max(0, Math.sin(bgT * 1.7 + i * 1.3));
+      ctx.fillStyle = `rgba(255,246,212,${a})`;
+      ctx.fillRect(sunX - w / 2 + Math.sin(i * 1.7 + bgT * .6) * 14, y, w, 1.6);
+    }
+    ctx.globalCompositeOperation = 'source-over';
+  }
   if (B === 'isles') {
     ctx.fillStyle = '#fff';
     for (let i = 0; i < 18; i++) { // sun glints and gentle swell
@@ -1164,9 +1196,9 @@ function drawStrikes() {
 /* ------------------------------ SPAWN ------------------------------ */
 function spawn(ev) {
   if (ev.type === 'stars') { dropStars(ev.x, -20, ev.n, 120); return; }
-  const d = ET[ev.type], hpm = (1 + LV.L * .42) * TM.hp * TH.hp, s = LV.s;
+  const d = ET[ev.type], s = LV.s, hpm = (1 + LV.L * .8 + s * .1) * TM.hp * TH.hp;
   const e = { type: ev.type, x: ev.x, y: ev.y ?? -40, x0: ev.x, hp: d.hp * hpm, maxHp: d.hp * hpm, r: d.r, mv: ev.mv || d.mv,
-    t: 0, fireRate: d.fr ? d.fr / ((1 + s * .16) * DIFFS[save.diff].fire * TM.fire * TH.fire) : 0, counted: !d.neutral && !d.nocount && ev.counted !== false,
+    t: 0, fireRate: d.fr ? d.fr / ((1 + s * .24) * DIFFS[save.diff].fire * TM.fire * TH.fire) : 0, counted: !d.neutral && !d.nocount && ev.counted !== false,
     ground: !!d.ground, neutral: !!d.neutral, nohit: !!d.nohit, stars: Math.round(d.stars * (1 + LV.L * .15) * TM.stars),
     amp: ev.amp || 120, dir: ev.dir || 1, ty: ev.ty || 200, ang: Math.PI / 2, flash: 0, vx: ev.vx || 0, vy: ev.vy || 0, prog: 0,
     spawnT: ev.type === 'hive' ? 1.5 : 2.5, arm: -1, aiming: 0, burst: 0, burstT: 0, bay: 0, part: ev.part, loyal: !!ev.loyal };
@@ -1174,8 +1206,8 @@ function spawn(ev) {
   e.fire = e.fireRate ? e.fireRate * (.4 + Math.random() * .6) : 0;
   if (e.type === 'bomber') { e.x = e.dir > 0 ? XL - 60 : XR + 60; }
   // armoured elites: tougher, faster-firing, worth double
-  if (!LV.rush && e.counted && !e.ground && ev.type !== 'hive' && Math.random() < .03 + s * .03 + (LV.tier || 0) * .07 + TH.elite) {
-    e.elite = true; e.hp = e.maxHp = e.maxHp * 1.9; e.fireRate *= .75; e.stars *= 2; SND.elite();
+  if (!LV.rush && e.counted && !e.ground && ev.type !== 'hive' && Math.random() < Math.min(.45, .05 + s * .045 + (LV.tier || 0) * .07 + TH.elite)) {
+    e.elite = true; e.hp = e.maxHp = e.maxHp * 2.1; e.fireRate *= .8; e.stars *= 2; SND.elite();
   }
   if (ev.type === 'heli' || ev.type === 'lifter') SND.rotor(ev.type === 'lifter' ? 9 : 6);
   if (ev.type === 'bomber') SND.flyby();
@@ -1196,7 +1228,7 @@ const BOSSES = [
 const VANGUARD_PATS = [['fan', 'radial', 'wave'], ['cone', 'fan', 'spiral'], ['shards', 'fan', 'radial'], ['cross', 'fan', 'wave'], ['bolts', 'fan', 'rain'], ['beam', 'radial', 'cone']];
 function spawnBoss() {
   const S = SECTORS[LV.s], major = LV.major, cfg = BOSSES[LV.s];
-  const hp = (major ? 1500 : 620) * (1 + LV.L * .5) * TM.hp * TH.hp;
+  const hp = (major ? 1500 : 620) * (1 + LV.L * .55 + LV.s * .06) * TM.hp * TH.hp;
   boss = { type: 'boss', boss: true, major, x: W / 2, y: -160, hp, maxHp: hp, r: major ? 82 : 58, t: 0, pt: 0, pat: -1, rest: 1.5,
     fireT: 0, ang: 0, flash: 0, counted: false, ground: false, neutral: false, stars: Math.round((major ? 260 : 110) * (1 + LV.L * .2) * TM.stars),
     name: major ? S.boss : `${S.boss.split(' ')[0]} VANGUARD`, spin: 0, shape: cfg.shape, phase: 0,
@@ -1209,7 +1241,7 @@ function spawnBoss() {
 /* ------------------------------ COMBAT ------------------------------ */
 function addPB(x, y, vx, vy, dmg, r, kind) { pb.push({ x, y, vx, vy, dmg, r, kind }); }
 function eShoot(x, y, a, sp) {
-  sp *= DIFFS[save.diff].bspd * TM.bspd * (1 + LV.s * .05);
+  sp *= DIFFS[save.diff].bspd * TM.bspd * (1 + LV.s * .07);
   const b = { x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: 6, bolt: sp > 250 };
   eb.push(b);
   return b;
@@ -1310,7 +1342,6 @@ function boom(x, y, r) {
   // scale with the blast, and get trimmed when the screen is already crowded.
   const k = clamp(r / 24, .6, 2), dense = parts.length > 340;
   const fire = Math.round((7 + r * .32) * (dense ? .5 : 1));
-  if (r >= 26) shake = Math.max(shake, Math.min(4, r * .07)); // a heavy blast kicks the camera
   parts.push({ kind: 'flash', x, y, t: .1, max: .1, sz: r * 1.5 });
   parts.push({ kind: 'fire', x, y, vx: 0, vy: 0, t: .4, max: .4, sz: r * 1.45, grow: 34, cap: r * 2.1, drag: .9, a: .8 }); // the mass
   for (let i = 0; i < fire; i++) {
@@ -1768,7 +1799,26 @@ function drawPlayerShip(x, y, tilt, scale = 1, id = save.ship) {
   if (!SHADOW) { hull.addColorStop(0, shade(S.col[0], 1.3)); hull.addColorStop(.5, S.col[0]); hull.addColorStop(1, shade(S.col[0], .55)); }
   ctx.fillStyle = hull; poly(pts); ctx.fill();
   ctx.fillStyle = SHADOW ? '#000' : bodyGrad(26, S.col[1]); poly(pts.map(([px, py]) => [px * .55, py * .7 + 6])); ctx.fill();
-  if (!SHADOW) { ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(0, -30); ctx.lineTo(0, 10); ctx.stroke(); }
+  if (!SHADOW) {
+    // panel seams and panel shading, then a rim light along the upper-left edge. This is most of
+    // what separates a flat vector jet from a rendered one.
+    ctx.save(); poly(pts); ctx.clip();
+    ctx.strokeStyle = 'rgba(12,22,34,.30)'; ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(-9, -10); ctx.lineTo(-26, 8); ctx.moveTo(9, -10); ctx.lineTo(26, 8);
+    ctx.moveTo(-12, 12); ctx.lineTo(12, 12); ctx.moveTo(-6, -22); ctx.lineTo(-6, 8);
+    ctx.moveTo(6, -22); ctx.lineTo(6, 8);
+    ctx.stroke();
+    const sheen = ctx.createLinearGradient(-30, -30, 22, 18);
+    sheen.addColorStop(0, 'rgba(255,255,255,.16)'); sheen.addColorStop(.4, 'rgba(255,255,255,0)');
+    ctx.fillStyle = sheen; ctx.fillRect(-40, -40, 80, 80);
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(255,255,255,.28)'; ctx.lineWidth = 1; poly(pts); ctx.stroke();
+    ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.beginPath(); ctx.moveTo(0, -30); ctx.lineTo(0, 10); ctx.stroke();
+    // canopy specular streak
+    ctx.fillStyle = 'rgba(255,255,255,.6)';
+    ctx.beginPath(); ctx.ellipse(-1.4, -17, 1.5, 4.6, -.22, 0, 7); ctx.fill();
+  }
   ctx.fillStyle = S.col[2];
   for (const sx of [-1, 1]) { const tip = pts.reduce((a, q) => q[0] * sx > a[0] * sx ? q : a); ctx.beginPath(); ctx.arc(tip[0] - sx * 4, tip[1] - 1, 3, 0, 7); ctx.fill(); }
   if (!SHADOW) { // port red, starboard green, slow blink, with a soft halo
@@ -1850,14 +1900,27 @@ function drawEnemy(e) {
       ctx.rotate(e.locked ? Math.atan2(e.vy, e.vx) - Math.PI / 2 : 0);
       ctx.fillStyle = col; poly([[0, 18], [10, -10], [0, -4], [-10, -10]]); ctx.fill();
       ctx.fillStyle = '#ff3b2e'; ctx.beginPath(); ctx.arc(0, 2, 3, 0, 7); ctx.fill(); break;
-    case 'fighter':
-      ctx.fillStyle = col; poly([[0, 22], [8, 6], [22, 0], [22, -8], [8, -6], [5, -18], [-5, -18], [-8, -6], [-22, -8], [-22, 0], [-8, 6]]); ctx.fill();
-      ctx.fillStyle = '#222'; ctx.fillRect(-3, -2, 6, 10); ctx.fillStyle = '#ff3b2e'; ctx.fillRect(-2, 8, 4, 4); break;
-    case 'gunship':
+    case 'fighter': {
+      const fp = [[0, 22], [8, 6], [22, 0], [22, -8], [8, -6], [5, -18], [-5, -18], [-8, -6], [-22, -8], [-22, 0], [-8, 6]];
+      ctx.fillStyle = col; poly(fp); ctx.fill();
+      if (!SHADOW) { ctx.strokeStyle = 'rgba(255,255,255,.22)'; ctx.lineWidth = 1; poly(fp); ctx.stroke(); }
+      ctx.fillStyle = '#222'; ctx.fillRect(-3, -2, 6, 10);
+      ctx.fillStyle = '#ff3b2e'; ctx.fillRect(-2, 8, 4, 4);
+      if (!SHADOW) { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .5; ctx.drawImage(SPR.fire, -6, 14, 12, 16); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; }
+      break; }
+    case 'gunship': {
+      const gp = [[0, 36], [18, 18], [20, -26], [-20, -26], [-18, 18]];
       ctx.fillStyle = '#3a3f4a'; ctx.fillRect(-34, -8, 68, 16);
-      ctx.fillStyle = col; poly([[0, 36], [18, 18], [20, -26], [-20, -26], [-18, 18]]); ctx.fill();
+      ctx.fillStyle = col; poly(gp); ctx.fill();
+      if (!SHADOW) { ctx.strokeStyle = 'rgba(255,255,255,.2)'; ctx.lineWidth = 1; poly(gp); ctx.stroke(); }
       ctx.fillStyle = '#2b2f38'; ctx.beginPath(); ctx.arc(0, 4, 10, 0, 7); ctx.fill();
-      ctx.fillStyle = '#ff3b2e'; ctx.beginPath(); ctx.arc(0, 4, 4, 0, 7); ctx.fill(); break;
+      ctx.fillStyle = '#ff3b2e'; ctx.beginPath(); ctx.arc(0, 4, 4, 0, 7); ctx.fill();
+      if (!SHADOW) {
+        ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .5;
+        for (const sx of [-1, 1]) ctx.drawImage(SPR.fire, sx * 22 - 6, 22, 12, 18);
+        ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+      }
+      break; }
     case 'bomber':
       ctx.rotate(e.dir > 0 ? -Math.PI / 2 : Math.PI / 2);
       ctx.fillStyle = col; poly([[0, 28], [8, 12], [30, 4], [30, -4], [8, -6], [6, -24], [-6, -24], [-8, -6], [-30, -4], [-30, 4], [-8, 12]]); ctx.fill();
@@ -2243,6 +2306,7 @@ function render() {
   ctx.restore(); viewX = 0;
   if (storm.light > 0) { ctx.fillStyle = `rgba(215,228,255,${storm.light * .22})`; ctx.fillRect(0, 0, W, H); }
   if (flash > 0) { ctx.fillStyle = `rgba(200,240,255,${Math.min(.6, flash)})`; ctx.fillRect(0, 0, W, H); }
+  drawBloom();
   drawHUD();
   if (banner) {
     const a = Math.min(1, banner.t, 3 - banner.t + .2);
