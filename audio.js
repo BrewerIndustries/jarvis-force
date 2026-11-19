@@ -7,7 +7,7 @@
    battle march, and the menus get a slow anthem. Scheduling uses the usual lookahead clock. */
 
 const SND = (() => {
-  let ctx = null, master, sfxBus, musBus, verbIn, noiseBuf, unlocked = false;
+  let ctx = null, master, sfxBus, musBus, verbIn, sfxVerb, noiseBuf, unlocked = false;
   const OPT_KEY = 'jarvisforce.audio';
   let opts = { music: true, sfx: true };
   try { Object.assign(opts, JSON.parse(localStorage.getItem(OPT_KEY)) || {}); } catch (e) {}
@@ -20,7 +20,7 @@ const SND = (() => {
     if (!AC) return null;
     ctx = new AC();
     const comp = ctx.createDynamicsCompressor();
-    comp.threshold.value = -14; comp.ratio.value = 4;
+    comp.threshold.value = -12; comp.ratio.value = 3.2; comp.attack.value = .004; comp.release.value = .18;
     master = ctx.createGain(); master.gain.value = .9;
     master.connect(comp).connect(ctx.destination);
     sfxBus = ctx.createGain(); sfxBus.gain.value = opts.sfx ? SFX_VOL : 0; sfxBus.connect(master);
@@ -31,6 +31,11 @@ const SND = (() => {
     const verb = ctx.createConvolver(); verb.buffer = imp;
     verbIn = ctx.createGain(); verbIn.gain.value = .28;
     verbIn.connect(verb).connect(musBus);
+    // effects get their own send so gunfire and blasts sit in a room too. It hangs off the effects
+    // bus, so it follows the Sound toggle and never gets muted by the music fading.
+    const verb2 = ctx.createConvolver(); verb2.buffer = imp;
+    sfxVerb = ctx.createGain(); sfxVerb.gain.value = 1;
+    sfxVerb.connect(verb2).connect(sfxBus); // through the effects bus, so the Sound toggle mutes the tail too
     const n = ctx.sampleRate; noiseBuf = ctx.createBuffer(1, n, n);
     const d = noiseBuf.getChannelData(0); for (let i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
     return ctx;
@@ -48,26 +53,55 @@ const SND = (() => {
   for (const ev of ['pointerdown', 'pointerup', 'touchend', 'click', 'keydown']) addEventListener(ev, unlock, true);
   const live = () => ctx && unlocked && ctx.state === 'running';
   const lastT = {};
-  function throttle(k, ms) { const n = performance.now(); if (n - (lastT[k] || 0) < ms) return false; lastT[k] = n; return true; }
+  function throttle(k, ms) { const n = performance.now(); if (lastT[k] != null && n - lastT[k] < ms) return false; lastT[k] = n; return true; }
   const hz = m => 440 * Math.pow(2, (m - 69) / 12);
   const pc12 = n => ((n % 12) + 12) % 12;
 
   // ---------- primitives
-  function tone(freq, dur, { type = 'sine', gain = .2, sweepTo = null, delay = 0, at = null, bus = sfxBus, attack = .006 } = {}) {
+  const clamp01 = (v, a, b) => v < a ? a : v > b ? b : v;
+  // every sound is built from these four shapes: a pitched tone, a noise burst, a fast broadband
+  // crack (the transient that reads as "gun") and a low thump (the pressure that reads as "boom").
+  function route(node, { pan = 0, verb = 0, bus = sfxBus } = {}) {
+    let out = node;
+    if (pan && ctx.createStereoPanner) { const sp = ctx.createStereoPanner(); sp.pan.value = clamp01(pan, -1, 1); out.connect(sp); out = sp; }
+    if (verb && sfxVerb) { const s = ctx.createGain(); s.gain.value = verb; out.connect(s).connect(sfxVerb); }
+    out.connect(bus);
+    return out;
+  }
+  function tone(freq, dur, { type = 'sine', gain = .2, sweepTo = null, delay = 0, at = null, bus = sfxBus, attack = .006, pan = 0, verb = 0, curve = 'exp' } = {}) {
     if (!live()) return;
     const t = at ?? ctx.currentTime + delay, o = ctx.createOscillator(), g = ctx.createGain();
     o.type = type; o.frequency.setValueAtTime(freq, t);
-    if (sweepTo) o.frequency.exponentialRampToValueAtTime(Math.max(20, sweepTo), t + dur);
-    g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(gain, t + attack); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
-    o.connect(g).connect(bus); o.start(t); o.stop(t + dur + .03);
+    if (sweepTo) {
+      if (curve === 'lin') o.frequency.linearRampToValueAtTime(Math.max(20, sweepTo), t + dur);
+      else o.frequency.exponentialRampToValueAtTime(Math.max(20, sweepTo), t + dur);
+    }
+    g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(gain, t + attack);
+    if (curve === 'lin') g.gain.linearRampToValueAtTime(.0001, t + dur);
+    else g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+    o.connect(g); route(g, { pan, verb, bus }); o.start(t); o.stop(t + dur + .03);
   }
-  function noise(dur, { gain = .25, filter = 'lowpass', freq = 900, q = 1, sweepTo = null, delay = 0, at = null, bus = sfxBus, attack = .003 } = {}) {
+  function noise(dur, { gain = .25, filter = 'lowpass', freq = 900, q = 1, sweepTo = null, delay = 0, at = null, bus = sfxBus, attack = .003, pan = 0, verb = 0, curve = 'exp' } = {}) {
     if (!live()) return;
     const t = at ?? ctx.currentTime + delay, s = ctx.createBufferSource(), f = ctx.createBiquadFilter(), g = ctx.createGain();
     s.buffer = noiseBuf; s.loop = dur > .9; f.type = filter; f.frequency.setValueAtTime(freq, t); f.Q.value = q;
-    if (sweepTo) f.frequency.exponentialRampToValueAtTime(Math.max(30, sweepTo), t + dur);
+    if (sweepTo) {
+      if (curve === 'lin') f.frequency.linearRampToValueAtTime(Math.max(30, sweepTo), t + dur);
+      else f.frequency.exponentialRampToValueAtTime(Math.max(30, sweepTo), t + dur);
+    }
     g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(gain, t + attack); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
-    s.connect(f).connect(g).connect(bus); s.start(t, s.loop ? Math.random() * .5 : Math.random() * Math.max(0, .95 - dur)); s.stop(t + dur + .03);
+    s.connect(f).connect(g); route(g, { pan, verb, bus });
+    s.start(t, s.loop ? Math.random() * .5 : Math.random() * Math.max(0, .95 - dur)); s.stop(t + dur + .03);
+  }
+  // the snap of a round breaking the sound barrier, plus the metallic PING of the action
+  function crack(gain = .15, freq = 3600, opts = {}) {
+    noise(.026, { gain, filter: 'highpass', freq, q: .7, attack: .0008, ...opts });
+    noise(.06, { gain: gain * .45, filter: 'bandpass', freq: freq * .32, q: .8, sweepTo: freq * .12, ...opts });
+  }
+  // low pressure wave: the chest-thump under a gunshot or an explosion
+  function thump(f0, f1, dur, gain = .2, opts = {}) {
+    tone(f0, dur, { type: 'sine', gain, sweepTo: f1, attack: .004, ...opts });
+    tone(f0 * 1.9, dur * .55, { type: 'triangle', gain: gain * .35, sweepTo: f1 * 1.7, ...opts });
   }
 
   // ---------- band instruments (scheduled at absolute times)
@@ -270,6 +304,15 @@ const SND = (() => {
     }
   }
 
+  // shells tumbling out of the ejection port, and the muzzle flash side alternating per shot
+  let muzzleSide = 1;
+  const rnd = (a, b) => a + Math.random() * (b - a);
+  function casing(pan = 0) {
+    const f = rnd(2400, 5200);
+    tone(f, .05, { type: 'triangle', gain: .022, sweepTo: f * .62, pan, delay: .02 + Math.random() * .06, verb: .2 });
+    noise(.012, { gain: .012, filter: 'bandpass', freq: f * 1.4, q: 6, pan, delay: .02 + Math.random() * .06 });
+  }
+
   return {
     unlock, music, stopMusic, duck, ambience,
     get opts() { return opts; },
@@ -277,29 +320,86 @@ const SND = (() => {
     compose,
     toggle(k) { opts[k] = !opts[k]; saveOpts(); unlock(); if (ctx) { sfxBus.gain.value = opts.sfx ? SFX_VOL : 0; ramp(musTarget(), .2); } return opts[k]; },
 
-    // weapons
-    shot() { if (throttle('shot', 85)) { tone(1250, .05, { type: 'square', gain: .018, sweepTo: 700 }); noise(.03, { gain: .02, filter: 'highpass', freq: 4000 }); } },
-    missile() { if (throttle('mis', 120)) noise(.32, { gain: .06, filter: 'bandpass', freq: 700, sweepTo: 2600, q: 1.5 }); },
-    laser() { tone(220, .5, { type: 'sawtooth', gain: .05, sweepTo: 880 }); tone(330, 1.6, { type: 'square', gain: .02, sweepTo: 300, delay: .4 }); },
-    flak() { if (throttle('flak', 200)) { noise(.12, { gain: .1, freq: 1800, sweepTo: 400 }); tone(160, .1, { type: 'triangle', gain: .08, sweepTo: 70 }); } },
-    zap() { if (throttle('zap', 90)) { noise(.1, { gain: .06, filter: 'bandpass', freq: 5000, q: 3 }); tone(1800, .08, { type: 'sawtooth', gain: .025, sweepTo: 600 }); } },
-    // impacts
-    hit() { if (throttle('hit', 55)) tone(320 + Math.random() * 120, .04, { type: 'square', gain: .02, sweepTo: 180 }); },
-    boom(r = 20) {
-      if (!throttle('boom', 45)) return;
-      const k = Math.min(1.6, r / 25);
-      noise(.25 + k * .2, { gain: .12 + k * .06, freq: 1400, sweepTo: 120 });
-      tone(110, .25 + k * .15, { gain: .12 + k * .08, sweepTo: 38 });
+    // weapons: a crack for the muzzle, a body for the round, a thump for the pressure, and a
+    // mechanical tick for the action. Panning alternates so the wing guns read as two barrels.
+    shot() {
+      if (!throttle('shot', 55)) return;
+      const p = (muzzleSide = -muzzleSide) * .16, v = .9 + Math.random() * .18;
+      crack(.26 * v, rnd(3400, 4600), { pan: p });
+      noise(.05, { gain: .15 * v, filter: 'bandpass', freq: 1150, q: .7, sweepTo: 320, pan: p });
+      thump(180 * v, 55, .1, .19 * v, { pan: p });
+      tone(rnd(2200, 3200), .016, { type: 'square', gain: .011, pan: p });
+      noise(.12, { gain: .05 * v, filter: 'lowpass', freq: 900, sweepTo: 260, delay: .01, pan: p, verb: .12 });
+      if (Math.random() < .55) casing(p);
     },
-    bigBoom() {
-      noise(1.4, { gain: .32, freq: 1600, sweepTo: 60 }); tone(90, 1.1, { gain: .3, sweepTo: 26 }); tone(55, 1.4, { gain: .22, sweepTo: 22, delay: .05 });
-      for (let i = 1; i < 5; i++) noise(.4, { gain: .12, freq: 1200, sweepTo: 150, delay: i * .14 });
+    missile(pan = 0) {
+      if (!throttle('mis', 110)) return;
+      crack(.09, 2100, { pan });
+      thump(115, 46, .2, .12, { pan });
+      noise(.55, { gain: .085, filter: 'bandpass', freq: 480, sweepTo: 2900, q: 1.3, attack: .05, pan, verb: .22 });
     },
-    hurt() { noise(.22, { gain: .18, freq: 900, sweepTo: 200 }); tone(140, .2, { type: 'square', gain: .07, sweepTo: 60 }); },
-    shield() { if (throttle('shd', 70)) tone(1500, .14, { type: 'sine', gain: .07, sweepTo: 2400 }); },
-    barrier() { tone(880, .3, { type: 'triangle', gain: .1, sweepTo: 1760 }); tone(1320, .3, { type: 'triangle', gain: .06, delay: .05 }); },
+    laser(pan = 0) {
+      if (!throttle('las', 900)) return;
+      noise(.22, { gain: .06, filter: 'bandpass', freq: 3200, q: 1.6, sweepTo: 900, pan });
+      tone(135, .55, { type: 'sawtooth', gain: .045, sweepTo: 420, pan });
+      tone(68, 1.2, { type: 'triangle', gain: .085, sweepTo: 130, pan });
+      noise(1.5, { gain: .035, filter: 'highpass', freq: 2600, attack: .05, pan, verb: .25 });
+    },
+    flak(pan = 0) {
+      if (!throttle('flak', 170)) return;
+      crack(.18, 3200, { pan });
+      thump(150, 42, .22, .17, { pan });
+      for (let i = 0; i < 4; i++) noise(.03, { gain: .018, filter: 'bandpass', freq: rnd(2400, 6400), q: 9, delay: .05 + i * .03, pan, verb: .2 });
+    },
+    zap(pan = 0) {
+      if (!throttle('zap', 90)) return;
+      noise(.09, { gain: .07, filter: 'bandpass', freq: 4200, q: 1.5, sweepTo: 1400, pan });
+      crack(.04, 5600, { pan });
+      tone(1700, .06, { type: 'sawtooth', gain: .02, sweepTo: 480, pan });
+    },
+    // impacts: metal on metal, not a beep
+    hit() {
+      if (!throttle('hit', 45)) return;
+      noise(.024, { gain: .13, filter: 'highpass', freq: 4800 });
+      tone(rnd(1600, 2600), .05, { type: 'triangle', gain: .07, sweepTo: 800 });
+      tone(rnd(220, 340), .05, { type: 'square', gain: .03, sweepTo: 80, delay: .004 });
+    },
+    boom(r = 20, pan = 0) {
+      if (!throttle('boom', 34)) return;
+      const k = clamp01(r / 28, .55, 1.8);
+      crack(.13 + .07 * k, 2400, { pan });
+      noise(.2 + .22 * k, { gain: .22 + .12 * k, filter: 'lowpass', freq: 1700, sweepTo: 105, pan, verb: .18 });
+      thump(110 + 30 * k, 33, .28 + .12 * k, .21 + .1 * k, { pan });
+      for (let i = 0; i < 3; i++) noise(.035, { gain: .014 * k, filter: 'bandpass', freq: rnd(2400, 6200), q: 9, delay: .04 + Math.random() * .35, pan, verb: .3 });
+    },
+    bigBoom(pan = 0) {
+      crack(.2, 2000, { pan });
+      noise(1.5, { gain: .37, filter: 'lowpass', freq: 1400, sweepTo: 45, pan, verb: .28 });
+      thump(95, 25, 1.15, .34, { pan });
+      tone(42, 1.7, { type: 'triangle', gain: .22, sweepTo: 19, pan });
+      for (let i = 1; i < 6; i++) noise(.4, { gain: .09, filter: 'lowpass', freq: 1100, sweepTo: 110, delay: i * .13, pan: pan + rnd(-.25, .25), verb: .3 });
+      for (let i = 0; i < 6; i++) noise(.04, { gain: .018, filter: 'bandpass', freq: rnd(2800, 6800), q: 10, delay: .2 + Math.random() * .9, pan: pan + rnd(-.4, .4) });
+    },
+    hurt(pan = 0) {
+      crack(.16, 2400, { pan });
+      thump(95, 30, .4, .17, { pan });
+      noise(.28, { gain: .11, filter: 'bandpass', freq: 700, q: .6, sweepTo: 200, pan });
+      for (let i = 0; i < 3; i++) tone(rnd(1700, 3400), .1, { type: 'triangle', gain: .025, sweepTo: rnd(700, 1200), delay: .03 + i * .04, pan });
+    },
+    shield() {
+      if (throttle('shd', 70)) {
+        tone(1500, .14, { type: 'sine', gain: .07, sweepTo: 2400 });
+        noise(.09, { gain: .04, filter: 'highpass', freq: 4200, sweepTo: 6200 });
+      }
+    },
+    barrier() { tone(880, .3, { type: 'triangle', gain: .1, sweepTo: 1760 }); tone(1320, .3, { type: 'triangle', gain: .06, delay: .05 }); noise(.2, { gain: .05, filter: 'highpass', freq: 3000, sweepTo: 6000 }); },
     revive() { [523, 659, 784, 1047].forEach((f, i) => tone(f, .25, { type: 'triangle', gain: .09, delay: i * .07 })); },
-    emp() { tone(70, 1.1, { type: 'sawtooth', gain: .12, sweepTo: 900 }); noise(1, { gain: .2, filter: 'bandpass', freq: 300, sweepTo: 5000, q: .7 }); tone(40, .9, { gain: .3, sweepTo: 25 }); },
+    emp() {
+      tone(30, 1.25, { gain: .24, sweepTo: 95, attack: .05 });
+      noise(1.2, { gain: .2, filter: 'bandpass', freq: 180, sweepTo: 6000, q: .7, attack: .18, verb: .3 });
+      crack(.15, 2800);
+      for (let i = 0; i < 5; i++) tone(rnd(500, 2000), .22, { type: 'sine', gain: .028, sweepTo: rnd(90, 300), delay: .4 + i * .07 });
+    },
     // pickups
     star(combo = 0) { if (throttle('star', 32)) tone(Math.min(2200, 880 + combo * 22) * (1 + Math.random() * .02), .07, { type: 'triangle', gain: .05 }); },
     heal() { tone(660, .12, { type: 'sine', gain: .1 }); tone(990, .2, { type: 'sine', gain: .09, delay: .08 }); },
@@ -308,28 +408,74 @@ const SND = (() => {
     cache() { tone(1047, .1, { type: 'square', gain: .04 }); tone(1568, .25, { type: 'square', gain: .04, delay: .07 }); },
     // threats and the storm
     warn() { for (let i = 0; i < 3; i++) { tone(660, .22, { type: 'square', gain: .05, delay: i * .5 }); tone(495, .22, { type: 'square', gain: .05, delay: i * .5 + .25 }); } },
-    aim() { if (throttle('aim', 150)) tone(1900, .07, { type: 'square', gain: .025 }); },
-    mine() { if (throttle('mine', 120)) [0, .12, .24].forEach(d => tone(2200, .04, { type: 'square', gain: .025, delay: d })); },
-    charge() { if (throttle('chg', 200)) tone(300, .9, { type: 'sawtooth', gain: .035, sweepTo: 1300 }); },
-    strike() { noise(.12, { gain: .3, filter: 'highpass', freq: 2500 }); noise(1.2, { gain: .22, freq: 700, sweepTo: 60, delay: .03 }); tone(60, .7, { gain: .2, sweepTo: 30 }); },
-    thunder() { const d = .15 + Math.random() * .9; noise(.08, { gain: .12, filter: 'highpass', freq: 3000 }); noise(2.4, { gain: .2, freq: 380, sweepTo: 50, delay: d, attack: .12 }); tone(45, 1.8, { gain: .12, sweepTo: 28, delay: d }); },
+    aim() { if (throttle('aim', 150)) { tone(1900, .07, { type: 'square', gain: .025 }); noise(.02, { gain: .03, filter: 'highpass', freq: 5000 }); } },
+    mine() { if (throttle('mine', 120)) [0, .12, .24].forEach(d => { tone(2200, .04, { type: 'square', gain: .025, delay: d }); noise(.02, { gain: .02, filter: 'highpass', freq: 4500, delay: d }); }); },
+    charge() { if (throttle('chg', 200)) { tone(300, .9, { type: 'sawtooth', gain: .035, sweepTo: 1300 }); noise(.9, { gain: .03, filter: 'bandpass', freq: 400, sweepTo: 3000, q: 2, attack: .3 }); } },
+    strike(pan = 0) {
+      crack(.28, 2600, { pan });
+      noise(.28, { gain: .15, filter: 'highpass', freq: 1800, pan });
+      thump(70, 24, .9, .19, { pan });
+      noise(.9, { gain: .12, filter: 'lowpass', freq: 900, sweepTo: 55, delay: .05, pan, verb: .35 });
+    },
+    thunder() {
+      const d = .15 + Math.random() * .9, p = rnd(-.3, .3);
+      noise(.08, { gain: .12, filter: 'highpass', freq: 3000, pan: p });
+      noise(2.4, { gain: .19, filter: 'lowpass', freq: 360, sweepTo: 45, delay: d, attack: .12, pan: p, verb: .3 });
+      tone(42, 1.9, { gain: .12, sweepTo: 26, delay: d, pan: p });
+    },
     // enemy fire and movement
-    eshot() { if (throttle('esh', 70)) tone(520 + Math.random() * 80, .07, { type: 'square', gain: .012, sweepTo: 300 }); },
-    volley() { if (throttle('vol', 110)) { tone(150, .18, { type: 'sawtooth', gain: .045, sweepTo: 80 }); noise(.12, { gain: .05, filter: 'bandpass', freq: 900, q: 1.2 }); } },
-    flame() { if (throttle('flm', 90)) noise(.35, { gain: .07, filter: 'bandpass', freq: 500, sweepTo: 1400, q: .8, attack: .04 }); },
-    snipe() { noise(.05, { gain: .12, filter: 'highpass', freq: 3000 }); tone(900, .12, { type: 'square', gain: .04, sweepTo: 200 }); },
-    rotor(n = 6) { if (!throttle('rot', 600)) return; for (let i = 0; i < n; i++) noise(.06, { gain: .05 * (1 - i / (n + 2)), freq: 260, delay: i * .085 }); },
+    eshot(pan = 0) {
+      if (!throttle('esh', 60)) return;
+      crack(.08, 3000, { pan });
+      noise(.05, { gain: .055, filter: 'bandpass', freq: 650, q: .8, sweepTo: 240, pan });
+      tone(rnd(200, 300), .07, { type: 'square', gain: .022, sweepTo: 90, pan });
+    },
+    volley(pan = 0) {
+      if (!throttle('vol', 105)) return;
+      crack(.15, 2400, { pan });
+      thump(165, 45, .24, .16, { pan });
+      noise(.16, { gain: .085, filter: 'bandpass', freq: 850, q: 1, sweepTo: 280, pan });
+    },
+    flame(pan = 0) { if (throttle('flm', 90)) { noise(.35, { gain: .07, filter: 'bandpass', freq: 500, sweepTo: 1400, q: .8, attack: .04, pan }); noise(.3, { gain: .04, filter: 'lowpass', freq: 260, attack: .05, pan }); } },
+    snipe(pan = 0) {
+      if (!throttle('snipe', 120)) return;
+      crack(.32, 4200, { pan, verb: .3 });
+      noise(.5, { gain: .12, filter: 'bandpass', freq: 1400, q: .5, sweepTo: 300, delay: .02, pan, verb: .4 });
+      thump(150, 40, .18, .11, { pan });
+    },
+    rotor(n = 6) { if (!throttle('rot', 600)) return; for (let i = 0; i < n; i++) { noise(.06, { gain: .045 * (1 - i / (n + 2)), freq: 260, delay: i * .085 }); tone(58, .09, { type: 'sine', gain: .03, sweepTo: 44, delay: i * .085 }); } },
     flyby() { if (throttle('fly', 500)) noise(1.4, { gain: .09, filter: 'bandpass', freq: 400, sweepTo: 1800, q: 1.4, attack: .5 }); },
-    launch() { if (throttle('lau', 150)) tone(380, .18, { type: 'triangle', gain: .035, sweepTo: 760 }); },
-    split() { if (throttle('spl', 80)) { tone(1100, .06, { type: 'square', gain: .03, sweepTo: 2200 }); noise(.08, { gain: .05, filter: 'highpass', freq: 2500 }); } },
+    launch() { if (throttle('lau', 150)) { crack(.05, 2600); thump(140, 50, .2, .06); noise(.3, { gain: .05, filter: 'bandpass', freq: 600, sweepTo: 2000, q: 1.2, attack: .04 }); } },
+    split() { if (throttle('spl', 80)) { crack(.05, 3600); tone(1100, .06, { type: 'square', gain: .03, sweepTo: 2200 }); noise(.08, { gain: .05, filter: 'highpass', freq: 2500 }); } },
     elite() { if (throttle('eli', 400)) [1319, 1661, 1976].forEach((f, i) => tone(f, .12, { type: 'triangle', gain: .03, delay: i * .05 })); },
     // structures
-    crumble() { if (!throttle('crm', 60)) return; noise(.9, { gain: .16, freq: 700, sweepTo: 90 }); tone(70, .6, { gain: .14, sweepTo: 30 }); for (let i = 1; i < 4; i++) noise(.12, { gain: .06, filter: 'bandpass', freq: 1800, q: 2, delay: .1 + i * .09 }); },
-    ricochet() { if (throttle('ric', 90)) tone(2400 + Math.random() * 800, .06, { type: 'triangle', gain: .02, sweepTo: 1600 }); },
-    clang() { if (throttle('clg', 300)) { tone(210, .5, { type: 'square', gain: .06, sweepTo: 140 }); tone(317, .4, { type: 'triangle', gain: .05 }); noise(.2, { gain: .1, freq: 1200 }); } },
+    crumble() {
+      if (!throttle('crm', 60)) return;
+      crack(.12, 1800);
+      noise(.9, { gain: .2, filter: 'lowpass', freq: 700, sweepTo: 80, verb: .2 });
+      thump(75, 28, .6, .17);
+      for (let i = 1; i < 5; i++) noise(.11, { gain: .05, filter: 'bandpass', freq: rnd(1200, 3200), q: 2, delay: .1 + i * .09 });
+    },
+    ricochet(pan = 0) {
+      if (!throttle('ric', 90)) return;
+      const f = rnd(2400, 3600);
+      tone(f, .08, { type: 'triangle', gain: .02, sweepTo: f * .55, pan, verb: .2 });
+      noise(.02, { gain: .03, filter: 'highpass', freq: 5000, pan });
+    },
+    clang(pan = 0) {
+      if (!throttle('clg', 300)) return;
+      crack(.16, 2600, { pan });
+      tone(210, .5, { type: 'square', gain: .075, sweepTo: 130, pan });
+      tone(317, .4, { type: 'triangle', gain: .045, pan });
+      thump(90, 40, .25, .08, { pan });
+    },
     // player state
     alarm() { if (throttle('alm', 1100)) { tone(880, .12, { type: 'square', gain: .03 }); tone(660, .12, { type: 'square', gain: .03, delay: .16 }); } },
-    takeoff() { noise(1.6, { gain: .1, filter: 'bandpass', freq: 300, sweepTo: 2200, q: 1, attack: .3 }); tone(90, 1.4, { type: 'sawtooth', gain: .03, sweepTo: 240 }); },
+    takeoff() {
+      noise(1.6, { gain: .09, filter: 'bandpass', freq: 300, sweepTo: 2200, q: 1, attack: .3 });
+      tone(85, 1.5, { type: 'sawtooth', gain: .028, sweepTo: 240 });
+      tone(48, 1.8, { type: 'triangle', gain: .08, sweepTo: 70, attack: .2 });
+    },
     medal(i = 0) { tone(1047 * Math.pow(2, Math.min(i, 8) / 12), .18, { type: 'triangle', gain: .06, delay: .02 }); tone(2093 * Math.pow(2, Math.min(i, 8) / 12), .25, { type: 'sine', gain: .03, delay: .06 }); },
     // UI and results
     click() { if (throttle('clk', 40)) tone(720, .045, { type: 'square', gain: .03 }); },

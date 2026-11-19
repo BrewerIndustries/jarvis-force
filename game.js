@@ -28,6 +28,9 @@ const $ = id => document.getElementById(id);
 const rand = (a, b) => a + Math.random() * (b - a);
 const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
 const dist2 = (a, b) => (a.x - b.x) ** 2 + (a.y - b.y) ** 2;
+// where a sound sits in the stereo field: the camera is the listener, so a drone on the right of the
+// screen fires from the right. Keeps busy fights readable by ear.
+const sndPan = x => x == null ? 0 : clamp((x - camX - W / 2) / (W / 2) * .8, -1, 1);
 const fmt = n => Math.round(n).toLocaleString();
 function rng(seed) {
   return function () {
@@ -463,7 +466,7 @@ function newRun(level) {
   LV = level; ST = stats(); curSector = LV.s; TM = TIERS[LV.tier || 0]; TH = LV.rush ? NO_THREAT : threat(LV.L, LV.tier || 0, ST);
   P = { x: W / 2, y: H - 160, tx: null, ty: null, vx: 0, r: ST.hitbox, hp: ST.maxHp, shield: ST.shield, shDelay: 0, inv: 1.5,
     bar: ST.barrier > 0, barT: 0,
-    fireT: 0, wingT: 0, misT: 1, lasT: 3, lasOn: 0, droT: .5, flakT: 1.5, dead: false, revived: false };
+    fireT: 0, wingT: 0, misT: 1, lasT: 3, lasOn: 0, droT: .5, flakT: 1.5, wakeT: 0, dead: false, revived: false };
   run = { stars: 0, baseCollected: 0, baseDropped: 0, kills: 0, total: 0, rescued: 0, damaged: false, bombs: ST.bombs,
     usedBomb: false, combo: 0, comboT: 0, bestCombo: 0, lastKill: -9, endT: 0, failT: 0, failed: false, rescueStars: 0, done: false,
     found: [], newShip: null };
@@ -505,6 +508,20 @@ function shadowPass(fn, dx, dy, a) {
   try { fn(); } finally { ctx = old; SHADOW = false; }
   ctx.globalAlpha = a; ctx.drawImage(shCv, dx + viewX, dy); ctx.globalAlpha = 1;
 }
+
+// soft round sprites, built once. A radial gradient per particle per frame is what makes canvas
+// explosions crawl, so fire, smoke and glow are pre-rendered and stamped instead.
+function softSprite(size, stops) {
+  const c = document.createElement('canvas'); c.width = c.height = size;
+  const g = c.getContext('2d'), r = size / 2, rg = g.createRadialGradient(r, r, 0, r, r, r);
+  for (const [o, col] of stops) rg.addColorStop(o, col);
+  g.fillStyle = rg; g.fillRect(0, 0, size, size);
+  return c;
+}
+const SPR = {
+  fire: softSprite(64, [[0, 'rgba(255,248,214,1)'], [.16, 'rgba(255,206,96,1)'], [.4, 'rgba(248,126,30,.88)'], [.72, 'rgba(196,56,14,.3)'], [1, 'rgba(90,24,6,0)']]),
+  smoke: softSprite(64, [[0, 'rgba(182,176,168,.72)'], [.45, 'rgba(116,110,104,.4)'], [1, 'rgba(58,54,54,0)']]),
+};
 
 const PAL = {
   isles:  { rock: '#7d8a74', ruin: '#8d979e' },
@@ -618,7 +635,7 @@ function solidAt(x, y, r) {
 function hurtStruct(o, d) {
   o.hp -= d; o.flash = .12;
   if (o.hp > 0) return;
-  o.dead = true; boom(o.rx, o.ry, 34); SND.crumble(); shake = Math.max(shake, 4);
+  o.dead = true; boom(o.rx, o.ry, 34); SND.crumble(sndPan(o.rx)); shake = Math.max(shake, 4);
   dropStars(o.rx, o.ry, Math.round((4 + LV.L * .6) * TM.stars));
   run.structs = (run.structs || 0) + 1;
 }
@@ -732,7 +749,12 @@ function drawTerrainKind(o, S) {
       if (SHADOW) { for (const r of o.ruins) prism(o.x + r.x, o.y + r.y, r.pts, r.h); trees(o.x, o.y, o.palms); return; }
       ctx.save(); ctx.translate(o.x, o.y);
       ctx.fillStyle = 'rgba(110,235,220,.16)'; blob(o.pts, 1.3); ctx.fill();
-      ctx.fillStyle = `rgba(255,255,255,${.12 + Math.sin(bgT * 2 + o.r) * .05})`; blob(o.pts, 1.1); ctx.fill();
+      const surf = .5 + .5 * Math.sin(bgT * 1.6 + o.r);
+      ctx.fillStyle = `rgba(232,255,255,${.08 + surf * .05})`; blob(o.pts, 1.14); ctx.fill();
+      ctx.strokeStyle = `rgba(232,255,255,${.1 + surf * .16})`; ctx.lineWidth = 1.8;
+      blob(o.pts, 1.16 + surf * .05); ctx.stroke();
+      ctx.strokeStyle = `rgba(232,255,255,${.05 + (1 - surf) * .09})`; ctx.lineWidth = 1.2;
+      blob(o.pts, 1.28 + (1 - surf) * .07); ctx.stroke();
       ctx.fillStyle = shade(S.shore, .55); ctx.translate(0, 9); blob(o.pts, 1); ctx.fill(); ctx.translate(0, -9);
       ctx.fillStyle = S.shore; blob(o.pts, 1); ctx.fill();
       ctx.fillStyle = shade(S.land, .5); ctx.translate(0, 5); blob(o.pts, .8); ctx.fill(); ctx.translate(0, -5);
@@ -945,19 +967,28 @@ function drawWaves(S) {
   const A = 5 + bgVar * 3.2, sp = 46, sc = bgScroll * 1.12, off = sc % sp, base = Math.floor(sc / sp);
   const hi = shade(S.sea[0], 1.3), lo = shade(S.sea[1], .85);
   for (let r = -1; r < H / sp + 2; r++) {
-    const y0 = r * sp + off - sp, ph = (base - r) * 1.7;
-    const yAt = x => y0 + A * Math.sin(x * .021 + bgT * 1.3 + ph) + A * .5 * Math.sin(x * .049 - bgT * .8 + ph * 2);
+    // each row keeps the same wave train but its own height and phase, so the sea is not a stripe pattern
+    const hv = hash(base + r, 11), amp = A * (.72 + hv * .56), y0 = r * sp + off - sp + (hv - .5) * sp * .55, ph = (base - r) * 1.7 + hv * 1.4;
+    const yAt = x => y0 + amp * Math.sin(x * .021 + bgT * 1.3 + ph) + amp * .5 * Math.sin(x * .049 - bgT * .8 + ph * 2);
     const x0 = XL - 24, x1 = XR + 24;
     ctx.beginPath(); ctx.moveTo(x0, yAt(x0));
     for (let x = x0 + 12; x <= x1; x += 12) ctx.lineTo(x, yAt(x));
-    ctx.lineTo(x1, y0 + sp + A * 2); ctx.lineTo(x0, y0 + sp + A * 2); ctx.closePath();
-    const g = ctx.createLinearGradient(0, y0 - A, 0, y0 + sp); g.addColorStop(0, hi); g.addColorStop(.35, S.sea[0]); g.addColorStop(1, lo);
+    ctx.lineTo(x1, y0 + sp + amp * 2.4); ctx.lineTo(x0, y0 + sp + amp * 2.4); ctx.closePath();
+    const g = ctx.createLinearGradient(0, y0 - amp, 0, y0 + sp); g.addColorStop(0, hi); g.addColorStop(.35, S.sea[0]); g.addColorStop(1, lo);
     ctx.fillStyle = g; ctx.fill();
-    ctx.strokeStyle = `rgba(235,248,255,${.22 + bgVar * .06})`; ctx.lineWidth = 1.5 + bgVar * .5;
+    ctx.strokeStyle = `rgba(235,248,255,${.16 + bgVar * .06 + hv * .05})`; ctx.lineWidth = 1.3 + bgVar * .5;
     ctx.beginPath(); for (let x = x0; x <= x1; x += 12) { const y = yAt(x); x > x0 ? ctx.lineTo(x, y) : ctx.moveTo(x, y); } ctx.stroke();
     if (bgVar >= 1) { // whitecaps on the highest crests
       ctx.fillStyle = 'rgba(255,255,255,.55)';
       for (let x = x0 + 6; x < x1; x += 24) { const d = Math.sin(x * .021 + bgT * 1.3 + ph); if (d < -.85) { ctx.beginPath(); ctx.arc(x, yAt(x) - 1, 1.5 + bgVar * .6, 0, 7); ctx.fill(); } }
+    }
+    // drifting foam streaks in the troughs
+    if (((base + r) & 2) === 0) {
+      ctx.strokeStyle = `rgba(230,246,255,${.09 + hv * .07})`; ctx.lineWidth = 1;
+      ctx.beginPath();
+      const sx = ((base + r) * 137.5) % WW + XL, len = 40 + hv * 90;
+      for (let k = 0; k < 3; k++) { const x = sx + k * 70, y = y0 + sp * .62 + k * 6; ctx.moveTo(x, y); ctx.lineTo(x + len * .5, y + 3); ctx.lineTo(x + len, y + 1); }
+      ctx.stroke();
     }
   }
 }
@@ -1066,7 +1097,7 @@ function updStrikes(dt) {
     if (s.tele > 0) {
       s.tele -= dt;
       if (s.tele <= 0) {
-        s.on = .25; shake = Math.max(shake, 5); storm.light = Math.max(storm.light, .7); SND.strike();
+        s.on = .25; shake = Math.max(shake, 5); storm.light = Math.max(storm.light, .7); SND.strike(sndPan(s.x));
         s.pts = boltPath(s.x + rand(-60, 60), -20, s.x, s.y);
         if (!P.dead && (P.x - s.x) ** 2 + (P.y - s.y) ** 2 < 40 * 40) hurtPlayer(22);
       }
@@ -1179,7 +1210,7 @@ function spawnBoss() {
 function addPB(x, y, vx, vy, dmg, r, kind) { pb.push({ x, y, vx, vy, dmg, r, kind }); }
 function eShoot(x, y, a, sp) {
   sp *= DIFFS[save.diff].bspd * TM.bspd * (1 + LV.s * .05);
-  const b = { x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: 6 };
+  const b = { x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: 6, bolt: sp > 250 };
   eb.push(b);
   return b;
 }
@@ -1196,7 +1227,7 @@ function hurtEnemy(e, d, silent) {
 function killEnemy(e) {
   e.dead = true;
   boom(e.x, e.y, e.r);
-  if (e.boss) SND.bigBoom(); else if (e.type === 'cache') SND.cache(); else SND.boom(e.r);
+  if (e.boss) SND.bigBoom(sndPan(e.x)); else if (e.type === 'cache') SND.cache(); else SND.boom(e.r, sndPan(e.x));
   if (e.type === 'cache') {
     dropStars(e.x, e.y, Math.round((25 + LV.L * 7) * TM.stars) * (LV.rush ? 2 : 1));
     if (Math.random() < .5) pickups.push({ kind: 'hp', x: e.x, y: e.y, vx: rand(-40, 40), vy: -80, t: 0 });
@@ -1251,7 +1282,7 @@ function hurtPlayer(d) {
   d *= DIFFS[save.diff].dmg * TM.dmg * TH.dmg * (1 - ST.armor);
   P.shDelay = 3;
   if (P.shield > 0) { const a = Math.min(P.shield, d); P.shield -= a; d -= a; }
-  if (d > 0) { P.hp -= d; run.damaged = true; P.inv = .9 * ST.invMul; shake = 9; sparks(P.x, P.y, '#ff6a4a', 12); SND.hurt(); }
+  if (d > 0) { P.hp -= d; run.damaged = true; P.inv = .9 * ST.invMul; shake = 9; sparks(P.x, P.y, '#ff6a4a', 12); SND.hurt(sndPan(P.x)); }
   else { P.inv = .35; sparks(P.x, P.y, '#6fe3ff', 8); SND.shield(); }
   if (P.hp <= 0) {
     if (ST.revive && !P.revived) {
@@ -1275,13 +1306,43 @@ function useBomb() {
 
 /* ------------------------------ FX ------------------------------ */
 function boom(x, y, r) {
-  const n = Math.min(40, 8 + r * .6);
-  for (let i = 0; i < n; i++) {
-    const a = Math.random() * 7, s = rand(40, 200) * (r / 25 + .5);
-    parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, t: rand(.3, .8), max: .8, c: ['#ffd34d', '#ff8a3d', '#ff4d2e', '#fff'][i % 4], sz: rand(2, 5) });
+  // an explosion is a flash, a fireball, smoke, shrapnel and embers on different clocks. The counts
+  // scale with the blast, and get trimmed when the screen is already crowded.
+  const k = clamp(r / 24, .6, 2), dense = parts.length > 340;
+  const fire = Math.round((7 + r * .32) * (dense ? .5 : 1));
+  if (r >= 26) shake = Math.max(shake, Math.min(4, r * .07)); // a heavy blast kicks the camera
+  parts.push({ kind: 'flash', x, y, t: .1, max: .1, sz: r * 1.5 });
+  parts.push({ kind: 'fire', x, y, vx: 0, vy: 0, t: .4, max: .4, sz: r * 1.45, grow: 34, cap: r * 2.1, drag: .9, a: .8 }); // the mass
+  for (let i = 0; i < fire; i++) {
+    const a = Math.random() * 6.283, s = rand(15, 95) * k;
+    parts.push({ kind: 'fire', x: x + rand(-5, 5), y: y + rand(-5, 5), vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+      t: rand(.3, .52), max: .52, sz: rand(12, 22) * k, grow: 30 * k, cap: rand(26, 40) * k, drag: .9 });
   }
-  parts.push({ ring: true, x, y, r: r * .5, t: .35, c: '#ffb04d' });
+  for (let i = 0; i < (dense ? 3 : 5); i++) {
+    const a = Math.random() * 6.283, s = rand(10, 55);
+    parts.push({ kind: 'smoke', x: x + rand(-8, 8), y: y + rand(-8, 8), vx: Math.cos(a) * s, vy: Math.sin(a) * s - 20,
+      t: rand(1.1, 1.9), max: 1.9, sz: rand(12, 20) * k, grow: 30 * k, cap: 34 * k, drag: .93, delay: i < 2 ? rand(.08, .26) : 0 });
+  }
+  const bits = Math.round((2 + r * .12) * (dense ? .4 : 1));
+  for (let i = 0; i < bits; i++) {
+    const a = rand(0, 6.283), s = rand(140, 360) * k;
+    parts.push({ kind: 'debris', x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, t: rand(.4, .85), max: .85,
+      sz: rand(2, 4.5), c: Math.random() < .5 ? '#2f2d34' : '#4b4640', rot: rand(0, 6), vr: rand(-16, 16), g: 420, drag: .985 });
+  }
+  for (let i = 0; i < Math.min(12, 2 + r * .16); i++) {
+    const a = rand(0, 6.283), s = rand(70, 280) * k;
+    parts.push({ kind: 'ember', x, y, vx: Math.cos(a) * s * .55, vy: Math.sin(a) * s * .55, t: rand(.5, 1.15), max: 1.15,
+      sz: rand(1.2, 2.2), c: i % 3 ? '#ffb347' : '#fff3c4', g: 180, drag: .955 });
+  }
+  parts.push({ ring: true, flat: true, x, y, r: r * .55, t: .22, max: .22, c: 'rgba(255,206,150,.55)', spd: 620, lw: 2 });
+  if (r >= 24) parts.push({ ring: true, flat: true, x, y, r: r * .35, t: .28, max: .28, c: 'rgba(255,255,255,.35)', spd: 540, lw: 1.2 });
 }
+// a bullet striking something: a pinpoint flash and a couple of sparks
+function impact(x, y, c = '#dff6ff') {
+  parts.push({ kind: 'flash', x, y, t: .07, max: .07, sz: 13 });
+  sparks(x, y, c, 3);
+}
+
 function sparks(x, y, c, n) {
   for (let i = 0; i < n; i++) { const a = Math.random() * 7, s = rand(60, 220); parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, t: rand(.15, .4), max: .4, c, sz: 2 }); }
 }
@@ -1314,6 +1375,10 @@ function update(dt) {
     }
     P.x = clamp(P.x, XL + 20, XR - 20); P.y = clamp(P.y, 60, H - 40);
     P.vx = (P.x - ox) / Math.max(dt, 1e-3);
+    P.moving = !!(kx || ky || P.tx != null);
+    if (P.moving && (BIOMES[curSector] === 'isles' || BIOMES[curSector] === 'seas')) { // wake on open water
+      if ((P.wakeT -= dt) <= 0) { P.wakeT = .06; parts.push({ kind: 'wake', x: P.x + rand(-7, 7), y: P.y + 20, vx: rand(-6, 6), vy: 30, t: .85, max: .85, sz: rand(5, 9), grow: 30, drag: .99 }); }
+    }
     // camera eases toward the ship: at the world edge it has panned the full PAN
     camX += (clamp((P.x - W / 2) / (W / 2 + PAN - 20), -1, 1) * PAN - camX) * Math.min(1, dt * 5);
     P.inv -= dt;
@@ -1334,7 +1399,8 @@ function update(dt) {
       let a = Math.atan2(b.vy, b.vx);
       if (best) { const ta = Math.atan2(best.y - b.y, best.x - b.x); let da = ((ta - a + Math.PI * 3) % (Math.PI * 2)) - Math.PI; a += clamp(da, -6 * dt, 6 * dt); }
       b.vx = Math.cos(a) * sp; b.vy = Math.sin(a) * sp;
-      if (Math.random() < .5) parts.push({ x: b.x, y: b.y, vx: 0, vy: 0, t: .25, max: .25, c: '#ffae5c', sz: 2.5 });
+      if (Math.random() < .75) parts.push({ kind: 'smoke', x: b.x - b.vx * .02, y: b.y - b.vy * .02, vx: rand(-9, 9), vy: rand(-6, 14), t: .45, max: .45, sz: rand(4, 7), grow: 13, drag: .96 });
+      if (Math.random() < .55) parts.push({ kind: 'fire', x: b.x - b.vx * .012, y: b.y - b.vy * .012, vx: 0, vy: 0, t: .11, max: .11, sz: 9, grow: 8 });
     }
     b.x += b.vx * dt; b.y += b.vy * dt;
     if (b.life != null && (b.life -= dt) <= 0) { b.dead = true; continue; }
@@ -1342,12 +1408,12 @@ function update(dt) {
     for (const e of enemies) {
       if (e.dead || e.nohit || e.y < -e.r) continue;
       if ((b.x - e.x) ** 2 + (b.y - e.y) ** 2 < (e.r + b.r) ** 2) {
-        hurtEnemy(e, b.dmg); b.dead = true; sparks(b.x, b.y, '#bff', 2);
+        hurtEnemy(e, b.dmg); b.dead = true; impact(b.x, b.y, '#cfeeff');
         if (b.kind === 'b' && ST.tesla && Math.random() < ST.tesla) zap(e);
         break;
       }
     }
-    if (!b.dead) { const o = solidAt(b.x, b.y, b.r); if (o) { b.dead = true; if (o.beh === 'dest') { hurtStruct(o, b.dmg); sparks(b.x, b.y, '#ffb08a', 2); } else { sparks(b.x, b.y, '#d8dde3', 2); SND.ricochet(); } } }
+    if (!b.dead) { const o = solidAt(b.x, b.y, b.r); if (o) { b.dead = true; if (o.beh === 'dest') { hurtStruct(o, b.dmg); impact(b.x, b.y, '#ffcaa0'); } else { sparks(b.x, b.y, '#d8dde3', 2); SND.ricochet(sndPan(b.x)); } } }
   }
   pb = pb.filter(b => !b.dead);
 
@@ -1401,9 +1467,15 @@ function update(dt) {
 
   // ---- fx
   for (const p of parts) {
+    if (p.delay > 0) { p.delay -= dt; continue; }
     p.t -= dt;
     if (p.zap) continue;
-    if (p.ring) p.r += 260 * dt; else { p.x += p.vx * dt; p.y += p.vy * dt; p.vx *= .94; p.vy *= .94; }
+    if (p.ring) { p.r += (p.spd || 260) * dt; continue; }
+    if (p.g) p.vy += p.g * dt;            // shrapnel falls
+    if (p.grow) p.sz = Math.min(p.cap || 1e4, p.sz + p.grow * dt);   // fire and smoke expand, up to a limit
+    if (p.vr) p.rot = (p.rot || 0) + p.vr * dt;
+    p.x += p.vx * dt; p.y += p.vy * dt;
+    const dr = p.drag ?? .94; p.vx *= dr; p.vy *= dr;
   }
   parts = parts.filter(p => p.t > 0);
   for (const t of texts) { t.t -= dt; t.y -= 22 * dt; }
@@ -1432,10 +1504,19 @@ function fireWeapons(dt) {
   if (P.fireT <= 0) {
     P.fireT = ST.fireInt;
     const n = ST.streams;
-    for (let i = 0; i < n; i++) { const o = (i - (n - 1) / 2); addPB(P.x + o * 11, P.y - 24, o * 40, -950, ST.dmg, 5, 'b'); }
+    for (let i = 0; i < n; i++) {
+      const o = (i - (n - 1) / 2), bx = P.x + o * 11;
+      addPB(bx, P.y - 24, o * 40, -950, ST.dmg, 5, 'b');
+      parts.push({ kind: 'flash', x: bx, y: P.y - 33, t: .07, max: .07, sz: 24, mz: true });
+    }
+    if (Math.random() < .65) { const side = Math.random() < .5 ? 1 : -1; parts.push({ kind: 'debris', x: P.x + side * 9, y: P.y - 6, vx: side * rand(60, 120), vy: rand(-30, 30), t: .55, max: .55, sz: 3, c: '#e8c06a', rot: rand(0, 6), vr: rand(-22, 22), g: 900, drag: .995 }); }
     SND.shot();
     P.wingT ^= 1;
-    if (ST.wings && P.wingT) { addPB(P.x - 18, P.y - 4, -170, -860, ST.wdmg, 4, 'w'); addPB(P.x + 18, P.y - 4, 170, -860, ST.wdmg, 4, 'w'); }
+    if (ST.wings && P.wingT) {
+      addPB(P.x - 18, P.y - 4, -170, -860, ST.wdmg, 4, 'w'); addPB(P.x + 18, P.y - 4, 170, -860, ST.wdmg, 4, 'w');
+      parts.push({ kind: 'flash', x: P.x - 18, y: P.y - 8, t: .06, max: .06, sz: 15, mz: true });
+      parts.push({ kind: 'flash', x: P.x + 18, y: P.y - 8, t: .06, max: .06, sz: 15, mz: true });
+    }
   }
   if (ST.mis) {
     P.misT -= dt;
@@ -1468,6 +1549,10 @@ function dronePos() {
 
 function updEnemy(e, dt) {
   e.t += dt; if (e.flash > 0) e.flash -= dt;
+  if (e.maxHp && e.hp < e.maxHp * .45) { // hurt machines trail smoke, then sparks
+    if (Math.random() < dt * 7) parts.push({ kind: 'smoke', x: e.x + rand(-e.r * .5, e.r * .5), y: e.y + rand(-e.r * .3, e.r * .4), vx: rand(-12, 12), vy: rand(-18, 6), t: .75, max: .75, sz: rand(5, 10), grow: 16, drag: .95 });
+    if (e.hp < e.maxHp * .2 && Math.random() < dt * 9) parts.push({ kind: 'ember', x: e.x + rand(-e.r * .4, e.r * .4), y: e.y, vx: rand(-20, 20), vy: rand(-30, 10), t: .5, max: .5, sz: 1.8, c: '#ffb347', g: 120, drag: .97 });
+  }
   if (e.boss) return updBoss(e, dt);
   switch (e.mv) {
     case 'down': e.y += 160 * dt; e.x += Math.sin(e.t * 3 + e.x0) * 20 * dt; break;
@@ -1520,8 +1605,8 @@ function updEnemy(e, dt) {
   }
   if (e.type === 'turret' || e.type === 'tank' || e.type === 'sniper') e.ang = e.aiming > 0 || e.burst > 0 ? e.lockA : aim(e);
   // telegraphed bursts (sniper aim line, tank double-tap)
-  if (e.aiming > 0) { e.aiming -= dt; if (e.aiming <= 0) { e.burst = 3; e.burstT = 0; SND.snipe(); } }
-  if (e.burst > 0) { e.burstT -= dt; if (e.burstT <= 0) { e.burstT = e.type === 'tank' ? .18 : e.type === 'heli' ? .13 : .09; e.burst--; eShoot(e.x, e.y + 10, e.lockA, e.burstSp || 330); if (e.type !== 'sniper') SND.eshot(); } }
+  if (e.aiming > 0) { e.aiming -= dt; if (e.aiming <= 0) { e.burst = 3; e.burstT = 0; SND.snipe(sndPan(e.x)); } }
+  if (e.burst > 0) { e.burstT -= dt; if (e.burstT <= 0) { e.burstT = e.type === 'tank' ? .18 : e.type === 'heli' ? .13 : .09; e.burst--; eShoot(e.x, e.y + 10, e.lockA, e.burstSp || 330); if (e.type !== 'sniper') SND.eshot(sndPan(e.x)); } }
   // mines arm when you get close, then burst
   if (e.type === 'mine' && !P.dead) {
     if (e.arm < 0 && Math.hypot(P.x - e.x, P.y - e.y) < 85) { e.arm = .7; SND.mine(); }
@@ -1552,7 +1637,7 @@ function updEnemy(e, dt) {
         case 'lifter': for (const sx of [-1, 1]) eShoot(e.x + sx * 16, e.y, a + sx * .14, 170); break;
         case 'hive': if (!e.loyal || !boss) for (let i = 0; i < 6; i++) eShoot(e.x, e.y + 30, a + (i - 2.5) * .22, 140); break;
       }
-      if (e.type !== 'sniper') SND.eshot();
+      if (e.type !== 'sniper') SND.eshot(sndPan(e.x));
     }
   }
   // rescue
@@ -1580,7 +1665,7 @@ function updBoss(e, dt) {
   e.spin += dt;
   if (e.beam) { // telegraph, then a column of light down from the boss
     const b = e.beam;
-    if (b.tele > 0) { b.tele -= dt; if (b.tele <= 0) { b.on = .9; shake = 6; SND.strike(); } }
+    if (b.tele > 0) { b.tele -= dt; if (b.tele <= 0) { b.on = .9; shake = 6; SND.strike(sndPan(b.x)); } }
     else if (b.on > 0) { b.on -= dt; if (b.on <= 0) e.beam = null; }
   }
   if (e.y < 190) { e.y += 90 * dt; return; }
@@ -1609,8 +1694,8 @@ function updBoss(e, dt) {
     switch (p) {
       case 'radial': { // rings, each turned half a step from the last
         e.fireT = .9 * rage; const n = 14 + s * 2; e.ring = (e.ring || 0) + Math.PI / n;
-        for (let i = 0; i < n; i++) eShoot(e.x, e.y + 20, e.ring + i / n * Math.PI * 2, 135); SND.volley(); break; }
-      case 'fan': { e.fireT = .6 * rage; const a = aim(e); for (let i = -2; i <= 2; i++) eShoot(e.x, e.y + 30, a + i * .2, 185); SND.volley(); break; }
+        for (let i = 0; i < n; i++) eShoot(e.x, e.y + 20, e.ring + i / n * Math.PI * 2, 135); SND.volley(sndPan(e.x)); break; }
+      case 'fan': { e.fireT = .6 * rage; const a = aim(e); for (let i = -2; i <= 2; i++) eShoot(e.x, e.y + 30, a + i * .2, 185); SND.volley(sndPan(e.x)); break; }
       case 'spiral': { // two arms, alternating direction each time the pattern comes round
         e.fireT = .1 * rage; if (e.pt < .1) e.sdir = -(e.sdir || 1);
         const a = e.pt * 2.6 * e.sdir; eShoot(e.x, e.y, a, 145); eShoot(e.x, e.y, a + Math.PI, 145); break; }
@@ -1625,14 +1710,14 @@ function updBoss(e, dt) {
         e.fireT = .9 * rage; const n = 15;
         e.gap = e.gap == null ? 6 : clamp(e.gap + Math.round(rand(-1, 1)), 1, n - 4);
         for (let i = 0; i < n; i++) if (i < e.gap || i > e.gap + 2) eShoot(XL + 20 + i * (WW - 40) / (n - 1), e.y + 30, Math.PI / 2, 120);
-        SND.volley(); break; }
+        SND.volley(sndPan(e.x)); break; }
       case 'cone': { // flame tongues: aim locks for each four-arc burst, so the lanes between the rays stay straight
         e.fireT = .16 * rage; e.fc = (e.fc || 0) + 1;
         if (e.fc % 8 < 4) { if (e.fc % 8 === 0) e.ca = aim(e); break; } // breath
         for (let i = -3; i <= 3; i++) eShoot(e.x, e.y + e.r * .6, e.ca + i * .16, 170);
         if (e.fc % 8 === 4) SND.flame(); break; }
       case 'mines': { e.fireT = 99; for (let i = 0; i < 3; i++) spawn({ type: 'mine', x: XL + 110 + i * (WW - 220) / 2, y: e.y + 20, counted: false }); break; }
-      case 'shards': { e.fireT = 1.1 * rage; const a = aim(e); for (let i = -1; i <= 1; i++) { const b = eShoot(e.x, e.y + 30, a + i * .4, 130); b.r = 11; b.split = .9; } SND.volley(); break; }
+      case 'shards': { e.fireT = 1.1 * rage; const a = aim(e); for (let i = -1; i <= 1; i++) { const b = eShoot(e.x, e.y + 30, a + i * .4, 130); b.r = 11; b.split = .9; } SND.volley(sndPan(e.x)); break; }
       case 'beam': { e.fireT = 99; e.beam = { x: clamp(P.x, XL + 30, XR - 30), tele: 1.3, on: 0 }; SND.charge(); break; }
       case 'cross': { // four rotating arms that reverse each time
         e.fireT = .14 * rage; if (e.pt < .1) e.sdir = -(e.sdir || 1);
@@ -1669,9 +1754,16 @@ SHAPES.ring = SHAPES.delta;
 function drawPlayerShip(x, y, tilt, scale = 1, id = save.ship) {
   const S = shipById(id), pts = SHAPES[S.shape] || SHAPES.delta;
   ctx.save(); ctx.translate(x, y); ctx.scale(scale * (1 - Math.abs(tilt) * .25), scale);
-  const fl = 16 + Math.random() * 10;
-  ctx.globalAlpha = .85; ctx.fillStyle = S.col[2]; poly([[-7, 16], [0, 16 + fl], [7, 16]]); ctx.fill(); ctx.globalAlpha = 1;
-  ctx.fillStyle = 'rgba(255,255,255,.9)'; poly([[-3, 16], [0, 12 + fl * .6], [3, 16]]); ctx.fill();
+  const fl = 15 + Math.random() * 11;
+  if (!SHADOW) { // afterburner bloom behind the tail
+    ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .5;
+    ctx.drawImage(SPR.fire, -13, 5, 26, 24 + fl * .55);
+    ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+  }
+  ctx.globalAlpha = .9; ctx.fillStyle = S.col[2]; poly([[-7, 16], [0, 16 + fl], [7, 16]]); ctx.fill();
+  ctx.fillStyle = '#ffb463'; poly([[-4.5, 16], [0, 16 + fl * .66], [4.5, 16]]); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.95)'; poly([[-2, 16], [0, 16 + fl * .38], [2, 16]]); ctx.fill();
+  ctx.globalAlpha = 1;
   const lx = -32 - tilt * 24, hull = SHADOW ? '#000' : ctx.createLinearGradient(lx, -30, lx + 64, 24);
   if (!SHADOW) { hull.addColorStop(0, shade(S.col[0], 1.3)); hull.addColorStop(.5, S.col[0]); hull.addColorStop(1, shade(S.col[0], .55)); }
   ctx.fillStyle = hull; poly(pts); ctx.fill();
@@ -1679,6 +1771,14 @@ function drawPlayerShip(x, y, tilt, scale = 1, id = save.ship) {
   if (!SHADOW) { ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(0, -30); ctx.lineTo(0, 10); ctx.stroke(); }
   ctx.fillStyle = S.col[2];
   for (const sx of [-1, 1]) { const tip = pts.reduce((a, q) => q[0] * sx > a[0] * sx ? q : a); ctx.beginPath(); ctx.arc(tip[0] - sx * 4, tip[1] - 1, 3, 0, 7); ctx.fill(); }
+  if (!SHADOW) { // port red, starboard green, slow blink, with a soft halo
+    const blink = .3 + .7 * Math.max(0, Math.sin(gameT * 2.4));
+    const tl = pts.reduce((a, q) => q[0] < a[0] ? q : a), tr = pts.reduce((a, q) => q[0] > a[0] ? q : a);
+    for (const [tip, sx, c] of [[tl, -1, '255,74,74'], [tr, 1, '86,255,150']]) {
+      ctx.fillStyle = `rgba(${c},${blink * .22})`; ctx.beginPath(); ctx.arc(tip[0] - sx * 4, tip[1] - 1, 7, 0, 7); ctx.fill();
+      ctx.fillStyle = `rgba(${c},${blink})`; ctx.beginPath(); ctx.arc(tip[0] - sx * 4, tip[1] - 1, 2.6, 0, 7); ctx.fill();
+    }
+  }
   ctx.fillStyle = '#ff9a3d'; ctx.fillRect(-2, 4, 4, 12);
   if (S.shape === 'ring') { ctx.strokeStyle = S.col[2]; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.ellipse(0, 6, 27, 9, 0, 0, 7); ctx.stroke(); }
   const g = ctx.createLinearGradient(0, -24, 0, -4); g.addColorStop(0, '#ffffff'); g.addColorStop(1, S.col[2]);
@@ -2036,11 +2136,27 @@ function render() {
     ctx.fillStyle = '#fff'; ctx.fillRect(P.x - 2, 0, 4, P.y - 26);
   }
   // player bullets
+  ctx.globalCompositeOperation = 'lighter';
   for (const b of pb) {
-    if (b.kind === 'm') { ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(Math.atan2(b.vy, b.vx)); ctx.fillStyle = '#ffd0a0'; ctx.fillRect(-8, -2.5, 14, 5); ctx.fillStyle = '#ff7a2b'; ctx.fillRect(4, -2.5, 4, 5); ctx.restore(); }
-    else if (b.kind === 'f') { ctx.fillStyle = '#ffb46a'; ctx.fillRect(b.x - 3, b.y - 3, 6, 6); }
-    else { ctx.fillStyle = b.kind === 'w' ? '#9ef0ff' : b.kind === 'd' ? '#b48cff' : '#e8fbff'; ctx.fillRect(b.x - 2, b.y - 9, 4, 18); ctx.fillStyle = 'rgba(63,216,255,.35)'; ctx.fillRect(b.x - 4, b.y - 6, 8, 14); }
+    if (b.kind === 'm') {
+      ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(Math.atan2(b.vy, b.vx));
+      ctx.globalAlpha = .55; ctx.drawImage(SPR.fire, 2, -8, 20, 16); ctx.globalAlpha = 1;
+      ctx.fillStyle = '#fff4dc'; ctx.fillRect(-8, -2, 13, 4);
+      ctx.fillStyle = '#ff8a2b'; ctx.fillRect(4, -1.6, 5, 3.2);
+      ctx.restore();
+    }
+    else if (b.kind === 'f') {
+      ctx.globalAlpha = .5; ctx.fillStyle = '#ff9d52'; ctx.fillRect(b.x - 5, b.y - 5, 10, 10); ctx.globalAlpha = 1;
+      ctx.fillStyle = '#ffe4b8'; ctx.fillRect(b.x - 2.5, b.y - 2.5, 5, 5);
+    }
+    else { // tracer: soft aura, hot core, white tip
+      const c = b.kind === 'w' ? '150,240,255' : b.kind === 'd' ? '190,150,255' : '190,245,255';
+      ctx.globalAlpha = .45; ctx.fillStyle = `rgb(${c})`; ctx.fillRect(b.x - 6, b.y - 13, 12, 26);
+      ctx.globalAlpha = 1; ctx.fillStyle = `rgb(${c})`; ctx.fillRect(b.x - 2.2, b.y - 11, 4.4, 22);
+      ctx.fillStyle = '#fff'; ctx.fillRect(b.x - 1, b.y - 12, 2, 15);
+    }
   }
+  ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
   // player
   if (!P.dead && (P.inv <= 0 || Math.floor(gameT * 20) % 2 === 0)) {
     drawPlayerShip(P.x, P.y, clamp(P.vx / 900, -1, 1));
@@ -2052,20 +2168,71 @@ function render() {
   }
   // enemy bullets
   for (const b of eb) {
+    const sp = Math.hypot(b.vx, b.vy) || 1, tx = b.vx / sp, ty = b.vy / sp;
+    if (b.bolt) { // sniper round: a long hot tracer so you can see it coming
+      ctx.strokeStyle = 'rgba(255,80,50,.42)'; ctx.lineWidth = b.r * 1.7; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(b.x - tx * 26, b.y - ty * 26); ctx.lineTo(b.x, b.y); ctx.stroke(); ctx.lineCap = 'butt';
+    } else {
+      ctx.strokeStyle = 'rgba(255,80,50,.26)'; ctx.lineWidth = b.r * 1.1; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(b.x - tx * 13, b.y - ty * 13); ctx.lineTo(b.x, b.y); ctx.stroke(); ctx.lineCap = 'butt';
+    }
     ctx.fillStyle = 'rgba(255,70,50,.35)'; ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 4, 0, 7); ctx.fill();
     ctx.fillStyle = '#ff6a4a'; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 7); ctx.fill();
-    ctx.fillStyle = '#fff3d0'; ctx.beginPath(); ctx.arc(b.x, b.y, b.r * .45, 0, 7); ctx.fill();
+    ctx.fillStyle = '#fff3d0'; ctx.beginPath(); ctx.arc(b.x - tx * 1.5, b.y - ty * 1.5, b.r * .45, 0, 7); ctx.fill();
   }
-  // particles
-  for (const p of parts) {
+  // particles: smoke, shrapnel and shockwaves first, then the additive fire on top of them
+  const drawPart = p => {
     if (p.zap) {
       ctx.globalAlpha = Math.max(0, p.t / p.max); ctx.strokeStyle = '#bfefff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(p.x, p.y);
       for (let k = 1; k < 6; k++) ctx.lineTo(p.x + (p.x2 - p.x) * k / 6 + rand(-9, 9), p.y + (p.y2 - p.y) * k / 6 + rand(-9, 9));
-      ctx.lineTo(p.x2, p.y2); ctx.stroke(); continue;
+      ctx.lineTo(p.x2, p.y2); ctx.stroke(); return;
     }
-    if (p.ring) { ctx.strokeStyle = p.c; ctx.globalAlpha = Math.max(0, p.t * 2); ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 7); ctx.stroke(); }
+    if (p.delay > 0) return;
+    const life = Math.max(0, p.t / (p.max || .4));
+    if (p.kind === 'fire' || p.kind === 'flash') {
+      ctx.globalAlpha = Math.min(1, Math.pow(life, p.kind === 'flash' ? .5 : 1.4) * (p.kind === 'flash' ? .9 : .45) * (p.a ?? 1));
+      ctx.drawImage(SPR.fire, p.x - p.sz / 2, p.y - p.sz / 2, p.sz, p.sz);
+      if (p.mz) { // muzzle flash: a hot streak across the barrel mouth
+        ctx.fillStyle = 'rgba(255,255,235,.9)';
+        ctx.fillRect(p.x - 1.2, p.y - p.sz * .55, 2.4, p.sz * 1.1);
+      }
+      return;
+    }
+    if (p.kind === 'smoke') {
+      ctx.globalAlpha = Math.pow(life, .7) * 1;
+      ctx.drawImage(SPR.smoke, p.x - p.sz / 2, p.y - p.sz / 2, p.sz, p.sz);
+      return;
+    }
+    if (p.kind === 'debris') {
+      ctx.globalAlpha = Math.min(1, life * 1.4);
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.rot || 0);
+      ctx.fillStyle = p.c; ctx.fillRect(-p.sz / 2, -p.sz / 4, p.sz, p.sz / 2);
+      ctx.restore();
+      return;
+    }
+    if (p.kind === 'ember') {
+      ctx.globalAlpha = Math.pow(life, .7); ctx.strokeStyle = p.c; ctx.lineWidth = p.sz; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.vx * .012, p.y - p.vy * .012); ctx.stroke();
+      ctx.lineCap = 'butt';
+      return;
+    }
+    if (p.kind === 'wake') {
+      ctx.globalAlpha = life * .45; ctx.strokeStyle = 'rgba(225,245,255,.8)'; ctx.lineWidth = 1.4;
+      ctx.beginPath(); ctx.ellipse(p.x, p.y, p.sz, p.sz * .5, 0, 0, 7); ctx.stroke();
+      return;
+    }
+    if (p.ring) {
+      ctx.strokeStyle = p.c; ctx.globalAlpha = Math.max(0, p.t * 2); ctx.lineWidth = p.lw || 3;
+      ctx.beginPath();
+      if (p.flat) ctx.ellipse(p.x, p.y, p.r, p.r * .62, 0, 0, 7); else ctx.arc(p.x, p.y, p.r, 0, 7);
+      ctx.stroke();
+    }
     else { ctx.globalAlpha = Math.max(0, p.t / p.max); ctx.fillStyle = p.c; ctx.fillRect(p.x - p.sz / 2, p.y - p.sz / 2, p.sz, p.sz); }
-  }
+  };
+  for (const p of parts) if (p.kind !== 'flash' && p.kind !== 'fire') drawPart(p);
+  ctx.globalCompositeOperation = 'lighter';
+  for (const p of parts) if (p.kind === 'flash' || p.kind === 'fire') drawPart(p);
+  ctx.globalCompositeOperation = 'source-over';
   ctx.globalAlpha = 1;
   drawWeather();
   if (storm.bolt) drawBolt(storm.bolt.pts, 2.5);

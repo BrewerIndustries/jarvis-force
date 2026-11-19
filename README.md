@@ -109,7 +109,17 @@ an auto-revive upgrade, and the stars-kept-on-death rule.
 Everything is procedural Canvas 2D with a pseudo-3D look:
 - Terrain prisms (`prism()`) lean away from the screen centre as they scroll past, and walls are shaded from a top-left light.
 - Shadows for terrain, jets and bosses are drawn into one black offscreen layer (`shadowPass()`) and composited once.
-- Ships and drones use gradient body shading.
+- Ships and drones use gradient body shading. The jet has an afterburner bloom and blinking port/starboard nav lights.
+- **Explosions** (`boom()`) are layered on separate clocks: a white flash, a fireball that cools from yellow to red,
+  tumbling shrapnel with gravity, embers, a flat shockwave, and smoke that billows up as the fire dies. Fire and smoke
+  are pre-rendered sprites stamped per particle, so no radial gradients are built per frame. Counts drop when the
+  screen is already busy.
+- **Gunfire** shows a muzzle flash at each barrel and a tumbling brass casing, and player rounds are tracers with a hot
+  core and a soft aura. Enemy rounds carry short trails, sniper rounds a long tracer, and missiles a flame and smoke
+  trail. Bullet impacts add a pinpoint flash.
+- Damaged machines trail smoke below 45% hull and throw embers below 20%.
+- On water the jet leaves a wake, islands have breathing surf rings, and the northern sea's wave rows each get their
+  own height, phase and foam streaks instead of reading as stripes.
 - **Side-scrolling camera:** the world is 64px wider than the screen on each side (`PAN`, `XL`/`XR` in game.js).
   The camera eases after the ship, so steering toward an edge pans the view and reveals extra room. Waves are
   stretched across the wider world (`widen()`), and clouds slide slightly faster than the ground for parallax.
@@ -122,12 +132,19 @@ Everything is procedural Canvas 2D with a pseudo-3D look:
   drum, crash cymbals and a piccolo on alternate passes, all through a small hall reverb. Each mission seeds its own
   tune, and the key is set by sector. Bosses get a faster minor-key battle march, Star Rush gets a quicker march, and the menus play a slow anthem.
   The music sits under the effects (bus gain 0.2), ducks while paused, and brass jingles play on mission complete and failed.
-- **Sound effects** cover guns, missiles, the laser, flak, tesla arcs, hits, explosions, shield and barrier blocks, EMP,
+- **Sound effects** are built like foley, not blips. Gunfire stacks a broadband crack (the muzzle), a band-passed body
+  (the round), a low thump (the pressure) and a mechanical tick (the action), with a brass casing tink on most shots and
+  small random pitch changes so bursts don't sound mechanical. Explosions add a sub-bass thump, debris crackle and a
+  reverb tail; heavy ones kick the camera.
+- Effects cover guns, missiles, the laser, flak, tesla arcs, hits, explosions, shield and barrier blocks, EMP,
   star pickups (pitch rises with the kill chain), rescues, parts, the boss warning siren, sniper aim beeps, mine arming,
   beam and lightning strikes, and storm thunder. They also cover enemy fire and boss volleys, flame breath, sniper cracks,
   helicopter rotors, bomber flybys, Hive launches, splitters breaking, elite arrivals, buildings collapsing, ricochets off towers,
   tower collisions, a low-hull alarm, a take-off whoosh, and a chime for each medal on the results screen.
   The Stormfront adds a looping rain bed. Rapid sounds are rate-limited.
+- **Stereo placement:** enemy fire, volleys, blasts, sniper shots and lightning pan with their position on screen, so a
+  drone on the right fires from the right. Effects have their own reverb send (behind the Sound toggle) and share a
+  master compressor, so a busy fight stays loud without clipping.
 - Music and Sound toggles sit on the main menu and the pause screen and are saved in localStorage (`jarvisforce.audio`).
   Audio starts on the first tap or key press, as browsers require. On iPhone it unlocks on touchend/click (pointerdown doesn't
   count as a tap there), resumes after calls or app switches, and asks to play even with the silent switch on (`navigator.audioSession`).
