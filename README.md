@@ -114,6 +114,10 @@ Everything is procedural Canvas 2D with a pseudo-3D look:
   panel seams, rivets, wing stripes, nozzle metal, canopy gradient and specular) and then stamped, with a black
   silhouette of the same bake feeding the shadow layer. Animated parts stay live: afterburner bloom and flame,
   blinking port/starboard nav lights. Fighters and gunships get a rim light, a canopy and engine glow.
+- Buildings are prisms with windows mapped onto their visible walls (`wallWindows()`): each wall is a quad, so a
+  window is a small quad interpolated between its base edge and the leaned top edge. City blocks and Legion towers
+  use it; sea rigs get cross-braced legs, a reflection and a helipad (skipped on Legion-held rigs, which carry the
+  roundel instead).
 - Distance haze: each sector tints the top of the screen so the far edge sits under atmosphere while the near edge
   stays crisp, and a diagonal light overlay warms the top-left and cools the bottom-right.
 - Sea rows key their height, phase and foam to the **world** row (`base - r`), not the screen row: keying to the

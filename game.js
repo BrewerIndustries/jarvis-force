@@ -666,6 +666,7 @@ function drawTower(o, pal) {
   const col = TOWER_COL[BIOMES[curSector]] || '#7a828c';
   const off = prism(o.x, o.y, o.pts, o.h, col, shade(col, 1.18), SHADOW ? 0 : 'rgba(255,96,72,.7)', 'rgba(0,0,0,.22)');
   if (SHADOW) return;
+  wallWindows(o.x, o.y, o.pts, o.h, o, { lit: '#ffb46a', dark: 'rgba(10,14,20,.6)', onChance: .2, cols: 3 });
   const tx = o.x + off[0], ty = o.y + off[1];
   // hazard band round the roof edge and a warning beacon: this one is at your altitude
   ctx.strokeStyle = 'rgba(255,205,60,.9)'; ctx.lineWidth = 4; ctx.setLineDash([8, 6]);
@@ -750,6 +751,36 @@ function prism(x, y, pts, h, side, top, edge, floors) {
   if (edge) { ctx.strokeStyle = edge; ctx.lineWidth = 1.5; poly(T); ctx.stroke(); }
   return [ox, oy];
 }
+// Windows on the visible walls of a prism, in the same projection: each wall is a quad between its
+// base edge and the leaned top edge, so a window is just a small quad mapped between the two.
+function wallWindows(x, y, pts, h, o, { lit = '#ffd58a', dark = 'rgba(14,20,26,.55)', onChance = .3, cols = 0, rows = 0 } = {}) {
+  if (SHADOW) return;
+  const [ox, oy] = lean(x, y, h), A = absPts(x, y, pts), T = absPts(x, y, pts, ox, oy), n = pts.length;
+  let cx = 0, cy = 0; for (const p of pts) { cx += p[0] / n; cy += p[1] / n; }
+  const seed0 = (o && o.ph) || 0;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n, ex = pts[j][0] - pts[i][0], ey = pts[j][1] - pts[i][1], m = Math.hypot(ex, ey) || 1;
+    let nx = ey / m, ny = -ex / m;
+    if (nx * ((pts[i][0] + pts[j][0]) / 2 - cx) + ny * ((pts[i][1] + pts[j][1]) / 2 - cy) < 0) { nx = -nx; ny = -ny; }
+    if (nx * ox + ny * oy >= 0) continue;
+    const w = Math.hypot(A[j][0] - A[i][0], A[j][1] - A[i][1]);
+    const c = cols || Math.max(2, Math.round(w / 10)), r = rows || Math.max(1, Math.round(h / 12));
+    for (let rr = 0; rr < r; rr++) for (let cc = 0; cc < c; cc++) {
+      const seed = hash(seed0 * 3 + i * 7 + rr * 31 + cc * 11, 5);
+      if (seed < 1 - onChance) continue;
+      const u = (cc + .5) / c, v = (rr + .62) / r, bw = .3 / c, bh = .22 / r;
+      const q = (uu, vv) => {
+        const bx = A[i][0] + (A[j][0] - A[i][0]) * uu, by = A[i][1] + (A[j][1] - A[i][1]) * uu;
+        const tx = T[i][0] + (T[j][0] - T[i][0]) * uu, ty = T[i][1] + (T[j][1] - T[i][1]) * uu;
+        return [bx + (tx - bx) * vv, by + (ty - by) * vv];
+      };
+      ctx.fillStyle = seed > .62 ? lit : dark;
+      poly([q(u - bw, v - bh), q(u + bw, v - bh), q(u + bw, v + bh), q(u - bw, v + bh)]);
+      ctx.fill();
+    }
+  }
+}
+
 function trees(x, y, list, leaf) {
   for (const t of list) {
     if (SHADOW) { for (const c of t.c) { ctx.beginPath(); ctx.arc(x + t.x + c[0] + 7, y + t.y + c[1] + 9, c[2], 0, 7); ctx.fill(); } continue; }
@@ -875,10 +906,32 @@ function drawTerrainKind(o, S) {
       if (!SHADOW) { ctx.fillStyle = 'rgba(255,255,255,.2)'; for (const p of o.pts) { ctx.beginPath(); ctx.arc(o.x + p[0] * .8, o.y + p[1] * .8 + bob, 9 + Math.sin(bgT * 3 + p[0]) * 2, 0, 7); ctx.fill(); } }
       const [ox, oy] = lean(o.x, o.y, o.h);
       if (SHADOW) { prism(o.x, o.y, o.pts.map(p => [p[0] * .9, p[1] * .9]), o.h); ctx.fillRect(o.x + o.h * .5, o.y + o.h * .65 - 60, 4, 60); return; }
+      // the rig sits in water: a soft reflection under it, then the legs and their cross-bracing
+      ctx.fillStyle = 'rgba(8,34,52,.22)';
+      ctx.beginPath(); ctx.ellipse(o.x + 5, o.y + bob + o.h * .42, o.pts[1][0] * 1.05, o.pts[1][0] * .42, 0, 0, 7); ctx.fill();
       ctx.strokeStyle = shade(pal.rig, .7); ctx.lineWidth = 4;
       for (const p of o.pts) { ctx.beginPath(); ctx.moveTo(o.x + p[0] * .8, o.y + p[1] * .8 + bob); ctx.lineTo(o.x + p[0] * .8 + ox, o.y + p[1] * .8 + oy + bob); ctx.stroke(); }
+      ctx.strokeStyle = 'rgba(44,54,64,.6)'; ctx.lineWidth = 1.4;
+      const legs = o.pts;
+      for (let i = 0; i < legs.length; i++) {
+        const a = legs[i], b = legs[(i + 1) % legs.length];
+        ctx.beginPath();
+        ctx.moveTo(o.x + a[0] * .8, o.y + a[1] * .8 + bob);
+        ctx.lineTo(o.x + b[0] * .8 + ox * .5, o.y + b[1] * .8 + oy * .5 + bob);
+        ctx.moveTo(o.x + b[0] * .8, o.y + b[1] * .8 + bob);
+        ctx.lineTo(o.x + a[0] * .8 + ox * .5, o.y + a[1] * .8 + oy * .5 + bob);
+        ctx.stroke();
+      }
       const off = prism(o.x, o.y + bob, o.pts.map(p => [p[0] * .95, p[1] * .2 - 4]), o.h, pal.rig, shade(pal.rig, 1.35), 'rgba(255,255,255,.2)');
       prism(o.x, o.y + bob, o.pts.map(p => [p[0] * .95, p[1] * .9]), o.h * .92, pal.rig, shade(pal.rig, 1.2), 'rgba(255,255,255,.15)');
+      // helipad ring on the upper deck, clear of the Legion roundel (which marks a held rig)
+      if (o.beh !== 'dest') {
+        const dx = o.x + off[0] - 13, dy = o.y + bob + off[1] - 2;
+        ctx.strokeStyle = 'rgba(255,214,90,.5)'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.ellipse(dx, dy, 12, 7.5, 0, 0, 7); ctx.stroke();
+        ctx.fillStyle = 'rgba(255,214,90,.5)'; ctx.font = '700 10px Orbitron, sans-serif'; ctx.textAlign = 'center';
+        ctx.fillText('H', dx, dy + 3);
+      }
       // relay mast with a blinking light
       const mx = o.x + off[0] * 1.6, my = o.y + bob + off[1] * 1.6;
       ctx.strokeStyle = '#c9d3dc'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(o.x + off[0], o.y + bob + off[1]); ctx.lineTo(mx, my); ctx.stroke();
@@ -887,6 +940,7 @@ function drawTerrainKind(o, S) {
     case 'bldg': {
       const off = prism(o.x, o.y, o.pts, o.h, pal.wall, shade(pal.roof, 1), 'rgba(255,255,255,.18)', 'rgba(20,28,24,.45)');
       if (SHADOW) return;
+      wallWindows(o.x, o.y, o.pts, o.h, o, { lit: '#ffd58a', dark: 'rgba(12,18,14,.5)', onChance: .34 });
       const tx = o.x + off[0], ty = o.y + off[1];
       if (o.ac) { ctx.fillStyle = shade(pal.roof, .7); ctx.fillRect(tx - 10, ty - 8, 16, 12); ctx.fillStyle = shade(pal.roof, 1.2); ctx.fillRect(tx - 10, ty - 8, 16, 3); }
       trees(tx, ty, [{ x: 0, y: 0, c: o.vines }], pal.leaf);
