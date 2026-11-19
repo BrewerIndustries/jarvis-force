@@ -536,7 +536,7 @@ function drawBloom() {
   bloomCtx.filter = 'brightness(1.15) contrast(7) blur(2.5px)';
   try { bloomCtx.drawImage(cv, 0, 0, BLOOM_W, BLOOM_H); } catch (e) { bloomOK = false; return; }
   bloomCtx.filter = 'none';
-  ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .12;
+  ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .14;
   ctx.drawImage(bloomCv, 0, 0, W, H);
   ctx.restore();
 }
@@ -658,7 +658,7 @@ function solidAt(x, y, r) {
 function hurtStruct(o, d) {
   o.hp -= d; o.flash = .12;
   if (o.hp > 0) return;
-  o.dead = true; boom(o.rx, o.ry, 34); SND.crumble(sndPan(o.rx)); shake = Math.max(shake, 4);
+  o.dead = true; boom(o.rx, o.ry, 34); SND.crumble(sndPan(o.rx)); shake = Math.max(shake, 2.5);
   dropStars(o.rx, o.ry, Math.round((4 + LV.L * .6) * TM.stars));
   run.structs = (run.structs || 0) + 1;
 }
@@ -1005,7 +1005,7 @@ function drawWaves(S) {
   const hi = shade(S.sea[0], 1.3), lo = shade(S.sea[1], .85);
   for (let r = -1; r < H / sp + 2; r++) {
     // each row keeps the same wave train but its own height and phase, so the sea is not a stripe pattern
-    const hv = hash(base + r, 11), amp = A * (.72 + hv * .56), y0 = r * sp + off - sp + (hv - .5) * sp * .55, ph = (base - r) * 1.7 + hv * 1.4;
+    const row = base - r, hv = hash(row, 11), amp = A * (.72 + hv * .56), y0 = r * sp + off - sp + (hv - .5) * sp * .55, ph = row * 1.7 + hv * 1.4;
     const yAt = x => y0 + amp * Math.sin(x * .021 + bgT * 1.3 + ph) + amp * .5 * Math.sin(x * .049 - bgT * .8 + ph * 2);
     const x0 = XL - 24, x1 = XR + 24;
     ctx.beginPath(); ctx.moveTo(x0, yAt(x0));
@@ -1020,10 +1020,10 @@ function drawWaves(S) {
       for (let x = x0 + 6; x < x1; x += 24) { const d = Math.sin(x * .021 + bgT * 1.3 + ph); if (d < -.85) { ctx.beginPath(); ctx.arc(x, yAt(x) - 1, 1.5 + bgVar * .6, 0, 7); ctx.fill(); } }
     }
     // drifting foam streaks in the troughs
-    if (((base + r) & 2) === 0) {
+    if ((row & 2) === 0) {
       ctx.strokeStyle = `rgba(230,246,255,${.09 + hv * .07})`; ctx.lineWidth = 1;
       ctx.beginPath();
-      const sx = ((base + r) * 137.5) % WW + XL, len = 40 + hv * 90;
+      const sx = (row * 137.5) % WW + XL, len = 40 + hv * 90;
       for (let k = 0; k < 3; k++) { const x = sx + k * 70, y = y0 + sp * .62 + k * 6; ctx.moveTo(x, y); ctx.lineTo(x + len * .5, y + 3); ctx.lineTo(x + len, y + 1); }
       ctx.stroke();
     }
@@ -1095,6 +1095,9 @@ function drawGrade() {
   const hz = ctx.createLinearGradient(0, 0, 0, H * .6);
   hz.addColorStop(0, HAZE[curSector]); hz.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = hz; ctx.fillRect(0, 0, W, H * .6);
+  const sun = ctx.createLinearGradient(0, 0, W, H);
+  sun.addColorStop(0, 'rgba(255,228,176,.075)'); sun.addColorStop(.5, 'rgba(255,255,255,0)'); sun.addColorStop(1, 'rgba(38,86,150,.085)');
+  ctx.fillStyle = sun; ctx.fillRect(0, 0, W, H);
   if (GRADE[bgVar]) { ctx.fillStyle = GRADE[bgVar]; ctx.fillRect(0, 0, W, H); }
   if (!vignette) { vignette = ctx.createRadialGradient(W * .42, H * .4, H * .25, W / 2, H / 2, H * .75); vignette.addColorStop(0, 'rgba(0,0,0,0)'); vignette.addColorStop(1, 'rgba(0,0,0,.42)'); }
   ctx.fillStyle = vignette; ctx.fillRect(0, 0, W, H);
@@ -1849,7 +1852,8 @@ function paintShip(g, S, pts) {
   const cg = g.createLinearGradient(0, -24, 0, -4);
   cg.addColorStop(0, '#ffffff'); cg.addColorStop(.55, '#dce9f6'); cg.addColorStop(1, S.col[2]);
   g.fillStyle = cg; g.beginPath(); g.ellipse(0, -13, 4.5, 10, 0, 0, 7); g.fill();
-  g.fillStyle = 'rgba(255,255,255,.65)'; g.beginPath(); g.ellipse(-1.4, -17, 1.4, 4.4, -.22, 0, 7); g.fill();
+  g.fillStyle = 'rgba(255,255,255,.72)'; g.beginPath(); g.ellipse(-1.4, -17, 1.5, 4.8, -.22, 0, 7); g.fill();
+  g.fillStyle = 'rgba(255,255,255,.85)'; g.beginPath(); g.ellipse(0, -27, 1.5, 3.2, 0, 0, 7); g.fill();
   g.strokeStyle = 'rgba(16,34,52,.35)'; g.lineWidth = .8; g.beginPath(); g.ellipse(0, -13, 4.5, 10, 0, 0, 7); g.stroke();
 }
 const shipArtd = {};
@@ -1872,8 +1876,8 @@ function drawPlayerShip(x, y, tilt, scale = 1, id = save.ship) {
   ctx.save(); ctx.translate(x, y); ctx.scale(scale * (1 - Math.abs(tilt) * .25), scale);
   if (SHADOW) { ctx.drawImage(art.shadow, -art.size / 2, -art.size / 2, art.size, art.size); ctx.restore(); return; }
   const fl = 15 + Math.random() * 11;
-  ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .5;
-  ctx.drawImage(SPR.fire, -13, 5, 26, 24 + fl * .55);
+  ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .62;
+  ctx.drawImage(SPR.fire, -15, 3, 30, 28 + fl * .6);
   ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
   ctx.globalAlpha = .9; ctx.fillStyle = S.col[2]; poly([[-7, 16], [0, 16 + fl], [7, 16]]); ctx.fill();
   ctx.fillStyle = '#ffb463'; poly([[-4.5, 16], [0, 16 + fl * .66], [4.5, 16]]); ctx.fill();
@@ -2203,7 +2207,7 @@ function render() {
     return;
   }
   ctx.save();
-  if (shake > 0) ctx.translate(rand(-shake, shake) * .5, rand(-shake, shake) * .5);
+  if (shake > 0) { const s = shake * .5; ctx.translate(Math.sin(gameT * 61) * s, Math.cos(gameT * 47) * s * .7); }
   viewX = camX; ctx.translate(-camX, 0);
   drawBg();
   for (const e of enemies) if (e.ground) drawEnemy(e);

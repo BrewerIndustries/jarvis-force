@@ -115,7 +115,9 @@ Everything is procedural Canvas 2D with a pseudo-3D look:
   silhouette of the same bake feeding the shadow layer. Animated parts stay live: afterburner bloom and flame,
   blinking port/starboard nav lights. Fighters and gunships get a rim light, a canopy and engine glow.
 - Distance haze: each sector tints the top of the screen so the far edge sits under atmosphere while the near edge
-  stays crisp.
+  stays crisp, and a diagonal light overlay warms the top-left and cools the bottom-right.
+- Sea rows key their height, phase and foam to the **world** row (`base - r`), not the screen row: keying to the
+  screen row re-hashed every row as the sea scrolled, which made the whole wave field pop every 46px.
 - Open water gets a specular sun path of drifting dashes in addition to the crest highlights.
 - **Bloom:** the bright parts of the frame (flashes, explosions, engine glow, sun glitter) go through a quarter-size
   contrast-and-blur pass and are added back, so lit things bleed light without washing out the sea. Composited
