@@ -498,15 +498,20 @@ function shade(hex, f) { // f<1 darkens, f>1 lightens toward white
 }
 const lean = (x, y, h) => [(x - viewX - W / 2) / W * .6 * h, ((y - H * .6) / H * .45 - .28) * h];
 
-const shCv = document.createElement('canvas'); shCv.width = W; shCv.height = H;
+// The shadow layer renders at half resolution and is upscaled when composited, which softens every
+// edge for free: contact shadows read as penumbra instead of a hard black shape, and it is cheaper.
+const SH_K = .5;
+const shCv = document.createElement('canvas');
+shCv.width = Math.ceil(W * SH_K); shCv.height = Math.ceil(H * SH_K);
 const shX = shCv.getContext('2d');
 // in the shadow layer every colour is black, whatever the drawing code asks for
 for (const p of ['fillStyle', 'strokeStyle']) Object.defineProperty(shX, p, { get: () => '#000', set: () => {} });
 function shadowPass(fn, dx, dy, a) {
   const old = ctx; ctx = shX; SHADOW = true;
-  shX.setTransform(1, 0, 0, 1, 0, 0); shX.globalAlpha = 1; shX.clearRect(0, 0, W, H); shX.setTransform(1, 0, 0, 1, -viewX, 0);
+  shX.setTransform(1, 0, 0, 1, 0, 0); shX.globalAlpha = 1; shX.clearRect(0, 0, shCv.width, shCv.height);
+  shX.setTransform(SH_K, 0, 0, SH_K, -viewX * SH_K, 0);
   try { fn(); } finally { ctx = old; SHADOW = false; }
-  ctx.globalAlpha = a; ctx.drawImage(shCv, dx + viewX, dy); ctx.globalAlpha = 1;
+  ctx.globalAlpha = a; ctx.drawImage(shCv, dx + viewX, dy, W, H); ctx.globalAlpha = 1;
 }
 
 // soft round sprites, built once. A radial gradient per particle per frame is what makes canvas
@@ -1080,9 +1085,16 @@ function drawWeather() {
     else ctx.fillRect(p.x - p.sz / 2, p.y - p.sz / 2, p.sz, p.sz);
   }
 }
+// distance haze: the top of the screen is further ahead, so it sits under a tinted veil and the
+// bottom stays crisp. Per sector so the moor is grey and the peaks are warm dust.
+const HAZE = ['rgba(150,214,232,.20)', 'rgba(255,168,116,.16)', 'rgba(188,224,244,.20)',
+              'rgba(168,228,186,.16)', 'rgba(148,160,176,.18)', 'rgba(148,122,226,.15)'];
 let vignette = null;
 function drawGrade() {
   ctx.save(); ctx.translate(viewX, 0);
+  const hz = ctx.createLinearGradient(0, 0, 0, H * .6);
+  hz.addColorStop(0, HAZE[curSector]); hz.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = hz; ctx.fillRect(0, 0, W, H * .6);
   if (GRADE[bgVar]) { ctx.fillStyle = GRADE[bgVar]; ctx.fillRect(0, 0, W, H); }
   if (!vignette) { vignette = ctx.createRadialGradient(W * .42, H * .4, H * .25, W / 2, H / 2, H * .75); vignette.addColorStop(0, 'rgba(0,0,0,0)'); vignette.addColorStop(1, 'rgba(0,0,0,.42)'); }
   ctx.fillStyle = vignette; ctx.fillRect(0, 0, W, H);
@@ -1782,57 +1794,101 @@ const SHAPES = {
   forward: [[0, -32], [7, -12], [10, 4], [30, -6], [32, 2], [12, 16], [6, 22], [-6, 22], [-12, 16], [-32, 2], [-30, -6], [-10, 4], [-7, -12]],
 };
 SHAPES.ring = SHAPES.delta;
-function drawPlayerShip(x, y, tilt, scale = 1, id = save.ship) {
+// The jet is painted once into a 2x canvas and then stamped. That buys crisp anti-aliasing at any
+// screen scale and lets the art carry real detail (panels, rivets, nozzle metal) that would be too
+// expensive to redraw 60 times a second. A black silhouette of the same bake feeds the shadow layer.
+const polyOn = (g, pts) => { g.beginPath(); pts.forEach((q, i) => i ? g.lineTo(q[0], q[1]) : g.moveTo(q[0], q[1])); g.closePath(); };
+function bodyGradOn(g, r, c) {
+  const gr = g.createLinearGradient(-r, -r, r, r);
+  gr.addColorStop(0, shade(c, 1.4)); gr.addColorStop(.45, c); gr.addColorStop(1, shade(c, .5));
+  return gr;
+}
+function paintShip(g, S, pts) {
+  // exhaust housing and two nozzles
+  g.fillStyle = 'rgba(8,14,22,.6)'; g.beginPath(); g.ellipse(0, 16, 11, 5, 0, 0, 7); g.fill();
+  g.fillStyle = shade(S.col[1], .45);
+  for (const sx of [-4.5, 4.5]) { g.beginPath(); g.ellipse(sx, 16, 3.4, 2.4, 0, 0, 7); g.fill(); }
+
+  const hull = g.createLinearGradient(-32, -30, 32, 24);
+  hull.addColorStop(0, shade(S.col[0], 1.35));
+  hull.addColorStop(.42, S.col[0]);
+  hull.addColorStop(.72, shade(S.col[0], .86));
+  hull.addColorStop(1, shade(S.col[0], .46));
+  g.fillStyle = hull; polyOn(g, pts); g.fill();
+
+  g.fillStyle = bodyGradOn(g, 26, S.col[1]);
+  polyOn(g, pts.map(([px, py]) => [px * .55, py * .7 + 6])); g.fill();
+
+  g.save(); polyOn(g, pts); g.clip();
+  const wing = g.createLinearGradient(0, -8, 0, 24);
+  wing.addColorStop(0, 'rgba(255,255,255,.08)'); wing.addColorStop(1, 'rgba(0,0,0,.20)');
+  g.fillStyle = wing; g.fillRect(-40, -40, 80, 80);
+  g.strokeStyle = 'rgba(10,20,30,.30)'; g.lineWidth = 1;
+  g.beginPath();
+  g.moveTo(-9, -10); g.lineTo(-26, 8); g.moveTo(9, -10); g.lineTo(26, 8);
+  g.moveTo(-12, 12); g.lineTo(12, 12);
+  g.moveTo(-6, -22); g.lineTo(-6, 8); g.moveTo(6, -22); g.lineTo(6, 8);
+  g.stroke();
+  g.fillStyle = 'rgba(18,28,38,.28)';
+  for (let i = 0; i < 4; i++) { g.fillRect(-15 - i * 2, -4 + i * 4, 1.3, 1.3); g.fillRect(14 + i * 2, -4 + i * 4, 1.3, 1.3); }
+  g.fillStyle = 'rgba(0,0,0,.16)';
+  g.fillRect(-27, 4, 8, 2.2); g.fillRect(19, 4, 8, 2.2);
+  const sheen = g.createLinearGradient(-30, -30, 22, 18);
+  sheen.addColorStop(0, 'rgba(255,255,255,.18)'); sheen.addColorStop(.45, 'rgba(255,255,255,0)');
+  g.fillStyle = sheen; g.fillRect(-40, -40, 80, 80);
+  g.restore();
+
+  g.strokeStyle = 'rgba(255,255,255,.30)'; g.lineWidth = 1.1; polyOn(g, pts); g.stroke();
+  g.strokeStyle = 'rgba(255,255,255,.35)'; g.lineWidth = 1;
+  g.beginPath(); g.moveTo(0, -30); g.lineTo(0, 10); g.stroke();
+
+  g.fillStyle = S.col[2];
+  for (const sx of [-1, 1]) { const tip = pts.reduce((a, q) => q[0] * sx > a[0] * sx ? q : a); g.beginPath(); g.arc(tip[0] - sx * 4, tip[1] - 1, 3, 0, 7); g.fill(); }
+  if (S.shape === 'ring') { g.strokeStyle = S.col[2]; g.lineWidth = 2.5; g.beginPath(); g.ellipse(0, 6, 27, 9, 0, 0, 7); g.stroke(); }
+
+  const cg = g.createLinearGradient(0, -24, 0, -4);
+  cg.addColorStop(0, '#ffffff'); cg.addColorStop(.55, '#dce9f6'); cg.addColorStop(1, S.col[2]);
+  g.fillStyle = cg; g.beginPath(); g.ellipse(0, -13, 4.5, 10, 0, 0, 7); g.fill();
+  g.fillStyle = 'rgba(255,255,255,.65)'; g.beginPath(); g.ellipse(-1.4, -17, 1.4, 4.4, -.22, 0, 7); g.fill();
+  g.strokeStyle = 'rgba(16,34,52,.35)'; g.lineWidth = .8; g.beginPath(); g.ellipse(0, -13, 4.5, 10, 0, 0, 7); g.stroke();
+}
+const shipArtd = {};
+function shipArt(id) {
+  if (shipArtd[id]) return shipArtd[id];
   const S = shipById(id), pts = SHAPES[S.shape] || SHAPES.delta;
+  const size = 200, SS = 2;
+  const c = document.createElement('canvas'); c.width = c.height = size * SS;
+  const g = c.getContext('2d');
+  g.setTransform(SS, 0, 0, SS, size * SS / 2, size * SS / 2);
+  paintShip(g, S, pts);
+  const sh = document.createElement('canvas'); sh.width = sh.height = size * SS;
+  const sg = sh.getContext('2d'); sg.drawImage(c, 0, 0);
+  sg.globalCompositeOperation = 'source-in'; sg.fillStyle = '#000';
+  sg.fillRect(0, 0, sh.width, sh.height);
+  return (shipArtd[id] = { art: c, shadow: sh, size });
+}
+function drawPlayerShip(x, y, tilt, scale = 1, id = save.ship) {
+  const S = shipById(id), art = shipArt(id);
   ctx.save(); ctx.translate(x, y); ctx.scale(scale * (1 - Math.abs(tilt) * .25), scale);
+  if (SHADOW) { ctx.drawImage(art.shadow, -art.size / 2, -art.size / 2, art.size, art.size); ctx.restore(); return; }
   const fl = 15 + Math.random() * 11;
-  if (!SHADOW) { // afterburner bloom behind the tail
-    ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .5;
-    ctx.drawImage(SPR.fire, -13, 5, 26, 24 + fl * .55);
-    ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
-  }
+  ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .5;
+  ctx.drawImage(SPR.fire, -13, 5, 26, 24 + fl * .55);
+  ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
   ctx.globalAlpha = .9; ctx.fillStyle = S.col[2]; poly([[-7, 16], [0, 16 + fl], [7, 16]]); ctx.fill();
   ctx.fillStyle = '#ffb463'; poly([[-4.5, 16], [0, 16 + fl * .66], [4.5, 16]]); ctx.fill();
   ctx.fillStyle = 'rgba(255,255,255,.95)'; poly([[-2, 16], [0, 16 + fl * .38], [2, 16]]); ctx.fill();
   ctx.globalAlpha = 1;
-  const lx = -32 - tilt * 24, hull = SHADOW ? '#000' : ctx.createLinearGradient(lx, -30, lx + 64, 24);
-  if (!SHADOW) { hull.addColorStop(0, shade(S.col[0], 1.3)); hull.addColorStop(.5, S.col[0]); hull.addColorStop(1, shade(S.col[0], .55)); }
-  ctx.fillStyle = hull; poly(pts); ctx.fill();
-  ctx.fillStyle = SHADOW ? '#000' : bodyGrad(26, S.col[1]); poly(pts.map(([px, py]) => [px * .55, py * .7 + 6])); ctx.fill();
-  if (!SHADOW) {
-    // panel seams and panel shading, then a rim light along the upper-left edge. This is most of
-    // what separates a flat vector jet from a rendered one.
-    ctx.save(); poly(pts); ctx.clip();
-    ctx.strokeStyle = 'rgba(12,22,34,.30)'; ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(-9, -10); ctx.lineTo(-26, 8); ctx.moveTo(9, -10); ctx.lineTo(26, 8);
-    ctx.moveTo(-12, 12); ctx.lineTo(12, 12); ctx.moveTo(-6, -22); ctx.lineTo(-6, 8);
-    ctx.moveTo(6, -22); ctx.lineTo(6, 8);
-    ctx.stroke();
-    const sheen = ctx.createLinearGradient(-30, -30, 22, 18);
-    sheen.addColorStop(0, 'rgba(255,255,255,.16)'); sheen.addColorStop(.4, 'rgba(255,255,255,0)');
-    ctx.fillStyle = sheen; ctx.fillRect(-40, -40, 80, 80);
-    ctx.restore();
-    ctx.strokeStyle = 'rgba(255,255,255,.28)'; ctx.lineWidth = 1; poly(pts); ctx.stroke();
-    ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.beginPath(); ctx.moveTo(0, -30); ctx.lineTo(0, 10); ctx.stroke();
-    // canopy specular streak
-    ctx.fillStyle = 'rgba(255,255,255,.6)';
-    ctx.beginPath(); ctx.ellipse(-1.4, -17, 1.5, 4.6, -.22, 0, 7); ctx.fill();
-  }
-  ctx.fillStyle = S.col[2];
-  for (const sx of [-1, 1]) { const tip = pts.reduce((a, q) => q[0] * sx > a[0] * sx ? q : a); ctx.beginPath(); ctx.arc(tip[0] - sx * 4, tip[1] - 1, 3, 0, 7); ctx.fill(); }
-  if (!SHADOW) { // port red, starboard green, slow blink, with a soft halo
+  ctx.drawImage(art.art, -art.size / 2, -art.size / 2, art.size, art.size);
+  { // port red, starboard green, slow blink, with a soft halo
     const blink = .3 + .7 * Math.max(0, Math.sin(gameT * 2.4));
-    const tl = pts.reduce((a, q) => q[0] < a[0] ? q : a), tr = pts.reduce((a, q) => q[0] > a[0] ? q : a);
+    const pts2 = SHAPES[S.shape] || SHAPES.delta;
+    const tl = pts2.reduce((a, q) => q[0] < a[0] ? q : a), tr = pts2.reduce((a, q) => q[0] > a[0] ? q : a);
     for (const [tip, sx, c] of [[tl, -1, '255,74,74'], [tr, 1, '86,255,150']]) {
       ctx.fillStyle = `rgba(${c},${blink * .22})`; ctx.beginPath(); ctx.arc(tip[0] - sx * 4, tip[1] - 1, 7, 0, 7); ctx.fill();
       ctx.fillStyle = `rgba(${c},${blink})`; ctx.beginPath(); ctx.arc(tip[0] - sx * 4, tip[1] - 1, 2.6, 0, 7); ctx.fill();
     }
   }
-  ctx.fillStyle = '#ff9a3d'; ctx.fillRect(-2, 4, 4, 12);
-  if (S.shape === 'ring') { ctx.strokeStyle = S.col[2]; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.ellipse(0, 6, 27, 9, 0, 0, 7); ctx.stroke(); }
-  const g = ctx.createLinearGradient(0, -24, 0, -4); g.addColorStop(0, '#ffffff'); g.addColorStop(1, S.col[2]);
-  ctx.fillStyle = g; ctx.beginPath(); ctx.ellipse(0, -13, 4.5, 10, 0, 0, 7); ctx.fill();
   ctx.restore();
 }
 const iconCache = {};
@@ -1905,6 +1961,10 @@ function drawEnemy(e) {
       ctx.fillStyle = col; poly(fp); ctx.fill();
       if (!SHADOW) { ctx.strokeStyle = 'rgba(255,255,255,.22)'; ctx.lineWidth = 1; poly(fp); ctx.stroke(); }
       ctx.fillStyle = '#222'; ctx.fillRect(-3, -2, 6, 10);
+      if (!SHADOW) {
+        ctx.fillStyle = 'rgba(150,220,255,.75)'; ctx.beginPath(); ctx.ellipse(0, -6, 2.6, 4.6, 0, 0, 7); ctx.fill();
+        ctx.fillStyle = 'rgba(255,255,255,.5)'; ctx.beginPath(); ctx.ellipse(-.7, -8, .9, 2, -.2, 0, 7); ctx.fill();
+      }
       ctx.fillStyle = '#ff3b2e'; ctx.fillRect(-2, 8, 4, 4);
       if (!SHADOW) { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .5; ctx.drawImage(SPR.fire, -6, 14, 12, 16); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; }
       break; }

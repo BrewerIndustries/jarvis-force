@@ -108,10 +108,14 @@ an auto-revive upgrade, and the stars-kept-on-death rule.
 ### Rendering
 Everything is procedural Canvas 2D with a pseudo-3D look:
 - Terrain prisms (`prism()`) lean away from the screen centre as they scroll past, and walls are shaded from a top-left light.
-- Shadows for terrain, jets and bosses are drawn into one black offscreen layer (`shadowPass()`) and composited once.
-- Ships and drones use gradient body shading. The jet has panel seams, a clipping sheen, a rim light, a canopy
-  specular streak, an afterburner bloom and blinking port/starboard nav lights. Fighters and gunships get a rim light
-  and engine glow.
+- Shadows for terrain, jets and bosses are drawn into one black offscreen layer (`shadowPass()`) at half resolution and
+  upscaled when composited, so contact shadows read as penumbra rather than hard black shapes (and it is cheaper).
+- Ships and drones use gradient body shading. The jet is painted once into a 2x canvas (`shipArt()`: hull lighting,
+  panel seams, rivets, wing stripes, nozzle metal, canopy gradient and specular) and then stamped, with a black
+  silhouette of the same bake feeding the shadow layer. Animated parts stay live: afterburner bloom and flame,
+  blinking port/starboard nav lights. Fighters and gunships get a rim light, a canopy and engine glow.
+- Distance haze: each sector tints the top of the screen so the far edge sits under atmosphere while the near edge
+  stays crisp.
 - Open water gets a specular sun path of drifting dashes in addition to the crest highlights.
 - **Bloom:** the bright parts of the frame (flashes, explosions, engine glow, sun glitter) go through a quarter-size
   contrast-and-blur pass and are added back, so lit things bleed light without washing out the sea. Composited
