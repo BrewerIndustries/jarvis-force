@@ -154,3 +154,7 @@ canvas{position:absolute;inset:0;width:540px;height:960px;display:block}
 
 .audio-row{display:flex;gap:8px;justify-content:center;margin-top:12px}
 .audio-row .btn.off{opacity:.55}
+
+/* which build the playtester is actually running; bump with the ?v= on the scripts */
+.build-tag { position: absolute; left: 14px; bottom: 10px; font: 600 10px Rajdhani, sans-serif;
+  letter-spacing: .12em; text-transform: uppercase; color: rgba(190, 225, 255, .38); pointer-events: none; }
