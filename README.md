@@ -130,8 +130,10 @@ Everything is procedural Canvas 2D with a pseudo-3D look:
   core and a soft aura. Enemy rounds carry short trails, sniper rounds a long tracer, and missiles a flame and smoke
   trail. Bullet impacts add a pinpoint flash.
 - Damaged machines trail smoke below 45% hull and throw embers below 20%.
-- On water the jet leaves a wake, islands have breathing surf rings, and the northern sea's wave rows each get their
-  own height, phase and foam streaks instead of reading as stripes.
+- On water the jet leaves a wake and casts a blurred, flattened reflection, islands have breathing surf rings and a
+  shaded far slope (lit plateau, shadowed side away from the sun), and ice floes carry cracks, a bright top rim and a
+  reflection in the swell. The northern sea's wave rows each get their own height, phase and foam streaks instead of
+  reading as stripes.
 - **Side-scrolling camera:** the world is 64px wider than the screen on each side (`PAN`, `XL`/`XR` in game.js).
   The camera eases after the ship, so steering toward an edge pans the view and reveals extra room. Waves are
   stretched across the wider world (`widen()`), and clouds slide slightly faster than the ground for parallax.

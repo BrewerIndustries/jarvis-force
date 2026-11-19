@@ -778,12 +778,23 @@ function drawTerrainKind(o, S) {
       blob(o.pts, 1.16 + surf * .05); ctx.stroke();
       ctx.strokeStyle = `rgba(232,255,255,${.05 + (1 - surf) * .09})`; ctx.lineWidth = 1.2;
       blob(o.pts, 1.28 + (1 - surf) * .07); ctx.stroke();
-      ctx.fillStyle = shade(S.shore, .55); ctx.translate(0, 9); blob(o.pts, 1); ctx.fill(); ctx.translate(0, -9);
-      ctx.fillStyle = S.shore; blob(o.pts, 1); ctx.fill();
-      ctx.fillStyle = shade(S.land, .5); ctx.translate(0, 5); blob(o.pts, .8); ctx.fill(); ctx.translate(0, -5);
-      const g = ctx.createRadialGradient(-o.r * .35, -o.r * .4, o.r * .05, 0, 0, o.r);
-      g.addColorStop(0, shade(S.land, 1.3)); g.addColorStop(1, shade(S.land, .68));
+      ctx.fillStyle = shade(S.shore, .55); ctx.save(); ctx.translate(0, 8); blob(o.pts, 1); ctx.fill(); ctx.restore();
+      const sand = ctx.createLinearGradient(-o.r * .7, -o.r * .7, o.r * .7, o.r * .9);
+      sand.addColorStop(0, shade(S.shore, 1.14)); sand.addColorStop(.5, S.shore); sand.addColorStop(1, shade(S.shore, .8));
+      ctx.fillStyle = sand; blob(o.pts, 1); ctx.fill();
+      ctx.fillStyle = shade(S.land, .48); ctx.save(); ctx.translate(0, 5); blob(o.pts, .8); ctx.fill(); ctx.restore();
+      const g = ctx.createRadialGradient(-o.r * .42, -o.r * .48, o.r * .04, 0, 0, o.r);
+      g.addColorStop(0, shade(S.land, 1.32)); g.addColorStop(.62, shade(S.land, 1.02)); g.addColorStop(1, shade(S.land, .68));
       ctx.fillStyle = g; blob(o.pts, .8); ctx.fill();
+      // the far side of the land falls away from the light, so the bottom of the plateau is in shade
+      ctx.save(); blob(o.pts, .8); ctx.clip();
+      const slope = ctx.createLinearGradient(0, o.r * .05, 0, o.r * .95);
+      slope.addColorStop(0, 'rgba(10,38,30,0)'); slope.addColorStop(1, 'rgba(10,38,30,.30)');
+      ctx.fillStyle = slope; ctx.fillRect(-o.r * 1.3, -o.r, o.r * 2.6, o.r * 2.2);
+      const rim = ctx.createLinearGradient(-o.r * .5, -o.r * .6, 0, o.r * .1);
+      rim.addColorStop(0, 'rgba(255,255,255,.10)'); rim.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = rim; ctx.fillRect(-o.r * 1.3, -o.r, o.r * 2.6, o.r * 2.2);
+      ctx.restore();
       ctx.restore();
       for (const r of o.ruins) prism(o.x + r.x, o.y + r.y, r.pts, r.h, pal.ruin, shade(pal.ruin, 1.15));
       trees(o.x, o.y, o.palms, S.land);
@@ -835,10 +846,29 @@ function drawTerrainKind(o, S) {
       return; }
     case 'floe': case 'berg': {
       const bob = Math.sin(bgT * 1.4 + o.ph) * (2 + bgVar);
-      if (!SHADOW) { ctx.fillStyle = 'rgba(255,255,255,.22)'; ctx.save(); ctx.translate(o.x, o.y + bob + 4); blob(o.pts, 1.15); ctx.fill(); ctx.restore(); }
-      const g = SHADOW ? 0 : ctx.createLinearGradient(o.x - o.r, o.y - o.r, o.x + o.r, o.y + o.r);
-      if (g) { g.addColorStop(0, '#ffffff'); g.addColorStop(1, pal.iceSide); }
-      prism(o.x, o.y + bob, o.pts, o.h, pal.iceSide, g || '#000', 'rgba(255,255,255,.5)');
+      if (SHADOW) { prism(o.x, o.y + bob, o.pts, o.h); return; }
+      // reflection in the water under the ice, then the wet contact ring
+      ctx.fillStyle = 'rgba(10,40,62,.22)';
+      ctx.save(); ctx.translate(o.x + o.h * .18, o.y + bob + o.h * .32 + 10); blob(o.pts, 1.06); ctx.fill(); ctx.restore();
+      ctx.fillStyle = 'rgba(255,255,255,.18)';
+      ctx.save(); ctx.translate(o.x, o.y + bob + 4); blob(o.pts, 1.15); ctx.fill(); ctx.restore();
+      const g = ctx.createLinearGradient(o.x - o.r, o.y - o.r, o.x + o.r, o.y + o.r);
+      g.addColorStop(0, '#ffffff'); g.addColorStop(.6, '#eef8ff'); g.addColorStop(1, pal.iceSide);
+      const off = prism(o.x, o.y + bob, o.pts, o.h, pal.iceSide, g, 'rgba(255,255,255,.5)');
+      if (off) { // cracks across the top face, and a hard rim where the ice meets the light
+        const top = absPts(o.x, o.y + bob, o.pts, off[0], off[1]);
+        ctx.save(); poly(top); ctx.clip();
+        ctx.strokeStyle = 'rgba(138,186,214,.42)'; ctx.lineWidth = 1;
+        for (let i = 0; i < 3; i++) {
+          const a = o.ph + i * 2.1, cx = o.x + off[0], cy = o.y + bob + off[1];
+          ctx.beginPath(); ctx.moveTo(cx - Math.cos(a) * o.r * .8, cy - Math.sin(a) * o.r * .8);
+          ctx.lineTo(cx + Math.cos(a + .5) * o.r * .2, cy + Math.sin(a + .5) * o.r * .2);
+          ctx.lineTo(cx + Math.cos(a) * o.r * .6, cy + Math.sin(a) * o.r * .6);
+          ctx.stroke();
+        }
+        ctx.restore();
+        ctx.strokeStyle = 'rgba(255,255,255,.55)'; ctx.lineWidth = 1.2; poly(top); ctx.stroke();
+      }
       return; }
     case 'rig': {
       const bob = Math.sin(bgT * 1.1 + o.ph) * 2;
@@ -2285,6 +2315,14 @@ function render() {
   }
   ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
   // player
+  if (!P.dead && bloomOK && (BIOMES[curSector] === 'isles' || BIOMES[curSector] === 'seas')) {
+    // the jet over open water: a blurred, flattened copy of the hull under it, not a second ship
+    const ra = shipArt(save.ship);
+    ctx.save(); ctx.filter = 'blur(2.5px)'; ctx.globalAlpha = .12;
+    ctx.translate(P.x, P.y + 62); ctx.scale(1, -.4);
+    ctx.drawImage(ra.art, -ra.size / 2, -ra.size / 2, ra.size, ra.size);
+    ctx.restore(); ctx.filter = 'none';
+  }
   if (!P.dead && (P.inv <= 0 || Math.floor(gameT * 20) % 2 === 0)) {
     drawPlayerShip(P.x, P.y, clamp(P.vx / 900, -1, 1));
     if (P.bar) { ctx.save(); ctx.translate(P.x, P.y); ctx.rotate(gameT); ctx.strokeStyle = 'rgba(255,224,138,.8)'; ctx.lineWidth = 2; hex(42); ctx.stroke(); ctx.restore(); }
