@@ -553,7 +553,9 @@ const SPR = {
 // shadow pass, built by tinting the same pixels.
 const RASTER = {};
 function loadRaster() {
-  const list = [['jet', 152], ['scout', 72], ['fighter', 92], ['gunship', 156], ['heli', 104], ['diver', 76]];
+  const list = [['jet', 152], ['scout', 72], ['fighter', 92], ['gunship', 156], ['heli', 104], ['diver', 76],
+                ['turret', 76], ['tank', 92], ['bomber', 116], ['sniper', 80], ['splitter', 96],
+                ['carrier', 208], ['hive', 224], ['lifter', 132], ['mine', 60]];
   for (const [id, hpx] of list) {
     const im = new Image();
     im.onload = () => {
@@ -567,25 +569,11 @@ function loadRaster() {
   }
 }
 loadRaster();
-// The Legion recolours itself per sector, so the shared enemy art is hue-rotated per sector and cached.
-const SECTOR_HUE = [0, 42, 212, 46, 168, 276];
-const RASTER_TINT = {};
-function rasterFor(id) {
-  const base = RASTER[id];
-  if (!base) return null;
-  const si = LV ? LV.s : 0, deg = SECTOR_HUE[si] || 0;
-  if (!deg) return base;
-  const key = id + ':' + si;
-  if (RASTER_TINT[key]) return RASTER_TINT[key];
-  const mk = src => {
-    const c = document.createElement('canvas'); c.width = src.width; c.height = src.height;
-    const g = c.getContext('2d');
-    try { g.filter = `hue-rotate(${deg}deg) saturate(1.15)`; } catch (e) {}
-    g.drawImage(src, 0, 0);
-    return c;
-  };
-  return (RASTER_TINT[key] = { img: mk(base.img), shadow: base.shadow, h: base.h });
-}
+// Enemies keep one consistent Legion livery. Hue-rotating the whole sprite per sector was tried and
+// looked wrong: it turned gunmetal purple and wrecked the metal shading. Sector identity comes from
+// the terrain and the grade instead.
+function rasterFor(id) { return RASTER[id] || null; }
+
 function drawRaster(r, x, y) {
   if (!r) return false;
   const h = r.h, w = h * (r.img.width / r.img.height);
@@ -2081,6 +2069,7 @@ function drawEnemy(e) {
       ctx.fillStyle = '#ff3b2e'; ctx.beginPath(); ctx.arc(0, 2, 3, 0, 7); ctx.fill();
       break; }
     case 'lifter': {
+      if (RASTER.lifter) { drawRaster(rasterFor('lifter'), 0, 0); break; }
       ctx.fillStyle = '#3a3f4a'; rr(-15, -40, 30, 80, 10); ctx.fill();
       ctx.fillStyle = col; rr(-12, -37, 24, 74, 9); ctx.fill();
       ctx.fillStyle = '#2b2f38'; ctx.fillRect(-8, -6, 16, 14);
@@ -2132,14 +2121,17 @@ function drawEnemy(e) {
       break; }
     case 'bomber':
       ctx.rotate(e.dir > 0 ? -Math.PI / 2 : Math.PI / 2);
+      if (RASTER.bomber) { drawRaster(rasterFor('bomber'), 0, 0); break; }
       ctx.fillStyle = col; poly([[0, 28], [8, 12], [30, 4], [30, -4], [8, -6], [6, -24], [-6, -24], [-8, -6], [-30, -4], [-30, 4], [-8, 12]]); ctx.fill();
       ctx.fillStyle = '#222'; ctx.fillRect(-4, -10, 8, 20); break;
     case 'carrier':
+      if (RASTER.carrier) { drawRaster(rasterFor('carrier'), 0, 0); break; }
       ctx.fillStyle = '#353a45'; poly([[0, 56], [40, 30], [52, -20], [30, -48], [-30, -48], [-52, -20], [-40, 30]]); ctx.fill();
       ctx.fillStyle = col; poly([[0, 44], [30, 24], [38, -14], [22, -36], [-22, -36], [-38, -14], [-30, 24]]); ctx.fill();
       ctx.fillStyle = '#1b1e25'; ctx.fillRect(-14, -20, 28, 40);
       ctx.fillStyle = '#ff3b2e'; for (let i = 0; i < 3; i++) ctx.fillRect(-10, -14 + i * 12, 20, 4); break;
     case 'turret':
+      if (RASTER.turret) { ctx.rotate(e.ang - Math.PI / 2); drawRaster(rasterFor('turret'), 0, 0); break; }
       ctx.fillStyle = '#3c4048'; ctx.beginPath(); ctx.arc(0, 0, 18, 0, 7); ctx.fill();
       ctx.fillStyle = col; ctx.beginPath(); ctx.arc(0, 0, 11, 0, 7); ctx.fill();
       ctx.rotate(e.ang - Math.PI / 2); ctx.fillStyle = '#20232a'; ctx.fillRect(-3, 0, 6, 22); break;
@@ -2149,6 +2141,12 @@ function drawEnemy(e) {
       ctx.fillStyle = '#ffd34d'; star(0, 0, 9, 0); ctx.fill(); break;
     case 'mine': {
       const blink = e.arm >= 0 && Math.floor(gameT * 16) % 2;
+      if (RASTER.mine) {
+        drawRaster(rasterFor('mine'), 0, 0);
+        if (blink) { ctx.fillStyle = 'rgba(255,255,255,.85)'; ctx.beginPath(); ctx.arc(0, 0, 4, 0, 7); ctx.fill(); }
+        if (e.arm >= 0) { ctx.strokeStyle = 'rgba(255,60,40,.5)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, 46, 0, 7); ctx.stroke(); }
+        break;
+      }
       ctx.fillStyle = blink ? '#fff' : '#454b57'; ctx.beginPath(); ctx.arc(0, 0, 11, 0, 7); ctx.fill();
       ctx.strokeStyle = col; ctx.lineWidth = 3;
       for (let i = 0; i < 6; i++) { const a = i * Math.PI / 3 + e.t; ctx.beginPath(); ctx.moveTo(Math.cos(a) * 10, Math.sin(a) * 10); ctx.lineTo(Math.cos(a) * 16, Math.sin(a) * 16); ctx.stroke(); }
@@ -2156,23 +2154,30 @@ function drawEnemy(e) {
       if (e.arm >= 0) { ctx.strokeStyle = 'rgba(255,60,40,.5)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, 46, 0, 7); ctx.stroke(); }
       break; }
     case 'sniper':
+      if (RASTER.sniper) { drawRaster(rasterFor('sniper'), 0, 0); break; }
       ctx.fillStyle = col; poly([[0, 24], [6, 4], [18, -2], [18, -10], [5, -8], [3, -20], [-3, -20], [-5, -8], [-18, -10], [-18, -2], [-6, 4]]); ctx.fill();
       ctx.save(); ctx.rotate(e.ang - Math.PI / 2); ctx.fillStyle = '#20232a'; ctx.fillRect(-2, 0, 4, 30); ctx.restore();
       ctx.fillStyle = '#7fe3ff'; ctx.beginPath(); ctx.arc(0, 0, 4, 0, 7); ctx.fill(); break;
     case 'splitter':
-      ctx.rotate(e.t * 1.2); ctx.fillStyle = col;
+      ctx.rotate(e.t * 1.2);
+      if (RASTER.splitter) { drawRaster(rasterFor('splitter'), 0, 0); break; }
+      ctx.fillStyle = col;
       for (let i = 0; i < 3; i++) { ctx.rotate(Math.PI * 2 / 3); poly([[0, 0], [10, -24], [-10, -24]]); ctx.fill(); }
       ctx.fillStyle = '#2b2f38'; ctx.beginPath(); ctx.arc(0, 0, 11, 0, 7); ctx.fill();
       ctx.fillStyle = '#ffd34d'; ctx.beginPath(); ctx.arc(0, 0, 4, 0, 7); ctx.fill(); break;
     case 'mini':
-      ctx.rotate(e.t * 6); ctx.fillStyle = col; poly([[0, -10], [9, 6], [-9, 6]]); ctx.fill(); break;
+      ctx.rotate(e.t * 6);
+      if (RASTER.splitter) { drawRaster(rasterFor('splitter'), 0, 0, .5); break; }
+      ctx.fillStyle = col; poly([[0, -10], [9, 6], [-9, 6]]); ctx.fill(); break;
     case 'tank':
+      if (RASTER.tank) { drawRaster(rasterFor('tank'), 0, 0); break; }
       ctx.fillStyle = '#2c3038'; ctx.fillRect(-18, -16, 36, 32);
       ctx.fillStyle = '#4a4f5a'; ctx.fillRect(-22, -18, 7, 36); ctx.fillRect(15, -18, 7, 36);
       ctx.fillStyle = col; ctx.beginPath(); ctx.arc(0, 0, 10, 0, 7); ctx.fill();
       ctx.rotate(e.ang - Math.PI / 2); ctx.fillStyle = '#20232a'; ctx.fillRect(-3, 0, 6, 24); break;
     case 'hive': {
       ctx.rotate(e.t * .3);
+      if (RASTER.hive) { drawRaster(rasterFor('hive'), 0, 0); break; }
       ctx.fillStyle = '#2d313b'; hex(54); ctx.fill(); ctx.fillStyle = col; hex(44); ctx.fill();
       const glow = Math.min(1, .45 + Math.sin(gameT * 5) * .25 + (e.bay > 0 ? .5 : 0));
       for (let i = 0; i < 6; i++) {
