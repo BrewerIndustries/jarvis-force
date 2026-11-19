@@ -547,6 +547,52 @@ const SPR = {
   sun: softSprite(64, [[0, 'rgba(255,246,196,.95)'], [.38, 'rgba(255,206,70,.42)'], [1, 'rgba(255,180,40,0)']]),
 };
 
+// Optional rendered sprite art. tools/key_sprites.py keys generated art off its magenta backdrop and
+// writes sprites/<id>.png at 2x; if a file is missing the game silently keeps the procedural art, so
+// the site never depends on the images being present. Each entry also gets a black silhouette for the
+// shadow pass, built by tinting the same pixels.
+const RASTER = {};
+function loadRaster() {
+  const list = [['jet', 152], ['scout', 72], ['fighter', 92], ['gunship', 156], ['heli', 104], ['diver', 76]];
+  for (const [id, hpx] of list) {
+    const im = new Image();
+    im.onload = () => {
+      const c = document.createElement('canvas'); c.width = im.width; c.height = im.height;
+      const g = c.getContext('2d');
+      g.drawImage(im, 0, 0);
+      g.globalCompositeOperation = 'source-in'; g.fillStyle = '#000'; g.fillRect(0, 0, c.width, c.height);
+      RASTER[id] = { img: im, shadow: c, h: hpx / 2 };
+    };
+    im.src = 'sprites/' + id + '.png';
+  }
+}
+loadRaster();
+// The Legion recolours itself per sector, so the shared enemy art is hue-rotated per sector and cached.
+const SECTOR_HUE = [0, 42, 212, 46, 168, 276];
+const RASTER_TINT = {};
+function rasterFor(id) {
+  const base = RASTER[id];
+  if (!base) return null;
+  const si = LV ? LV.s : 0, deg = SECTOR_HUE[si] || 0;
+  if (!deg) return base;
+  const key = id + ':' + si;
+  if (RASTER_TINT[key]) return RASTER_TINT[key];
+  const mk = src => {
+    const c = document.createElement('canvas'); c.width = src.width; c.height = src.height;
+    const g = c.getContext('2d');
+    try { g.filter = `hue-rotate(${deg}deg) saturate(1.15)`; } catch (e) {}
+    g.drawImage(src, 0, 0);
+    return c;
+  };
+  return (RASTER_TINT[key] = { img: mk(base.img), shadow: base.shadow, h: base.h });
+}
+function drawRaster(r, x, y) {
+  if (!r) return false;
+  const h = r.h, w = h * (r.img.width / r.img.height);
+  ctx.drawImage(SHADOW ? r.shadow : r.img, x - w / 2, y - h / 2, w, h);
+  return true;
+}
+
 const PAL = {
   isles:  { rock: '#7d8a74', ruin: '#8d979e' },
   peaks:  { rock: '#8c5c40', cap: '#d8cfc6', ground: ['#4a2c1c', '#24140d'] },
@@ -1957,8 +2003,17 @@ function shipArt(id) {
   return (shipArtd[id] = { art: c, shadow: sh, size });
 }
 function drawPlayerShip(x, y, tilt, scale = 1, id = save.ship) {
-  const S = shipById(id), art = shipArt(id);
+  const S = shipById(id), art = shipArt(id), ras = id === 'ember' ? RASTER.jet : null;
   ctx.save(); ctx.translate(x, y); ctx.scale(scale * (1 - Math.abs(tilt) * .25), scale);
+  if (ras) { // rendered hero art; engines are still drawn live on top
+    if (SHADOW) { drawRaster(ras, 0, 0); ctx.restore(); return; }
+    const fl0 = 15 + Math.random() * 11;
+    ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .55;
+    ctx.drawImage(SPR.fire, -13, ras.h * .3, 26, 20 + fl0 * .5);
+    ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+    drawRaster(ras, 0, 0);
+    ctx.restore(); return;
+  }
   if (SHADOW) { ctx.drawImage(art.shadow, -art.size / 2, -art.size / 2, art.size, art.size); ctx.restore(); return; }
   const fl = 15 + Math.random() * 11;
   ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .62;
@@ -2010,6 +2065,7 @@ function drawEnemy(e) {
   switch (e.type) {
     case 'heli': {
       ctx.rotate(clamp(e.vx / 600, -.25, .25));
+      if (drawRaster(rasterFor('heli'), 0, 0)) break;
       ctx.fillStyle = col; ctx.fillRect(-2.5, -38, 5, 30); // tail boom
       ctx.fillRect(-9, -40, 18, 4);
       ctx.fillStyle = '#3a3f4a'; ctx.fillRect(-19, -2, 38, 6); // stub wings and rocket pods
@@ -2039,13 +2095,16 @@ function drawEnemy(e) {
       }
       break; }
     case 'scout':
+      if (drawRaster(rasterFor('scout'), 0, 0)) break;
       ctx.fillStyle = col; poly([[0, 16], [14, -6], [6, -12], [0, -6], [-6, -12], [-14, -6]]); ctx.fill();
       ctx.fillStyle = '#ffd34d'; ctx.beginPath(); ctx.arc(0, 0, 3, 0, 7); ctx.fill(); break;
     case 'diver':
       ctx.rotate(e.locked ? Math.atan2(e.vy, e.vx) - Math.PI / 2 : 0);
+      if (drawRaster(rasterFor('diver'), 0, 0)) break;
       ctx.fillStyle = col; poly([[0, 18], [10, -10], [0, -4], [-10, -10]]); ctx.fill();
       ctx.fillStyle = '#ff3b2e'; ctx.beginPath(); ctx.arc(0, 2, 3, 0, 7); ctx.fill(); break;
     case 'fighter': {
+      if (drawRaster(rasterFor('fighter'), 0, 0)) break;
       const fp = [[0, 22], [8, 6], [22, 0], [22, -8], [8, -6], [5, -18], [-5, -18], [-8, -6], [-22, -8], [-22, 0], [-8, 6]];
       ctx.fillStyle = col; poly(fp); ctx.fill();
       if (!SHADOW) { ctx.strokeStyle = 'rgba(255,255,255,.22)'; ctx.lineWidth = 1; poly(fp); ctx.stroke(); }
@@ -2058,6 +2117,7 @@ function drawEnemy(e) {
       if (!SHADOW) { ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .5; ctx.drawImage(SPR.fire, -6, 14, 12, 16); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; }
       break; }
     case 'gunship': {
+      if (drawRaster(rasterFor('gunship'), 0, 0)) break;
       const gp = [[0, 36], [18, 18], [20, -26], [-20, -26], [-18, 18]];
       ctx.fillStyle = '#3a3f4a'; ctx.fillRect(-34, -8, 68, 16);
       ctx.fillStyle = col; poly(gp); ctx.fill();

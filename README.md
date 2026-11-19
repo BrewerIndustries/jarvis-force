@@ -117,6 +117,12 @@ Everything is procedural Canvas 2D with a pseudo-3D look:
 - Bosses carry battle damage as their hull fails: scorch patches past 28%, smoke past 50%, open fire past 78%,
   plus a thruster wash under the hull. The HUD is drawn on glass panels (`panel()`) with a segmented hull readout,
   a glowing star counter and a boss plate with a bright leading edge. Stars on the field carry a warm bloom.
+- **Rendered sprite art** for the hero jet and the main air enemies (scout, fighter, gunship, helicopter, diver).
+  `tools/key_sprites.py` keys the generated art off its magenta backdrop (a magenta-ness key with despill, not a
+  colour match, so dark hulls and the helicopter's blurred rotor do not fringe purple), trims it, normalises it to
+  2x the in-game size and writes `sprites/<id>.png`. `game.js` loads them at boot and falls back to the procedural
+  art when a file is missing, so the site never depends on the images. Enemy sprites are hue-rotated per sector and
+  cached, which keeps the Legion's per-sector colour identity.
 - Buildings are prisms with windows mapped onto their visible walls (`wallWindows()`): each wall is a quad, so a
   window is a small quad interpolated between its base edge and the leaned top edge. City blocks and Legion towers
   use it; sea rigs get cross-braced legs, a reflection and a helipad (skipped on Legion-held rigs, which carry the
