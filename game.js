@@ -555,7 +555,9 @@ const RASTER = {};
 function loadRaster() {
   const list = [['jet', 152], ['scout', 72], ['fighter', 92], ['gunship', 156], ['heli', 104], ['diver', 76],
                 ['turret', 76], ['tank', 92], ['bomber', 116], ['sniper', 80], ['splitter', 96],
-                ['carrier', 208], ['hive', 224], ['lifter', 132], ['mine', 60]];
+                ['carrier', 208], ['hive', 224], ['lifter', 132], ['mine', 60],
+                ['boss_manta', 380], ['boss_colossus', 380], ['boss_maw', 380], ['boss_thorn', 380],
+                ['boss_cell', 380], ['boss_eye', 380]];
   for (const [id, hpx] of list) {
     const im = new Image();
     im.onload = () => {
@@ -2236,7 +2238,15 @@ function drawBoss(e) {
     ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
   }
   let coreR = R * .32;
-  switch (e.shape) {
+  // rendered boss art when it exists; the procedural silhouette stays as the fallback
+  const bimg = RASTER['boss_' + e.shape];
+  if (bimg) {
+    // fit to the boss's footprint: cap both height and width so a wide manta does not overrun the screen
+    const asc = bimg.img.width / bimg.img.height;
+    const k = Math.min((R * 2.3) / bimg.h, (R * 3.0) / (asc * bimg.h));
+    drawRaster(bimg, 0, 0, k);
+  }
+  if (!bimg) switch (e.shape) {
     case 'manta': {
       const body = [[0, .9], [.5, .4], [1.5, -.1], [1.2, -.35], [.4, -.6], [0, -.8], [-.4, -.6], [-1.2, -.35], [-1.5, -.1], [-.5, .4]];
       ctx.fillStyle = dark; ctx.fillRect(-R * .08, -R * 1.35, R * .16, R * .7);
