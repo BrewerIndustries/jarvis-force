@@ -47,7 +47,8 @@ Space/B or the EMP button = EMP charge · P/Esc or the ⏸ button = pause. The s
 - **3 tiers per mission (Mk I / Mk II / Mk III).** Earn every medal on a tier to unlock the next one. It's the same
   mission (same seed) with extra seeded waves layered on, plus tougher drones, heavier and faster fire, and more damage
   (`TIERS` in game.js), with bigger star and medal payouts. Each tier adds a medal: Mk II = *No EMP used*,
-  Mk III = *30-kill chain*. That's 5 + 6 + 7 = 18 medals per mission, 432 in all. The tier picker opens from the
+  Mk III = *30-kill chain*. The chain window grows with the tier (1.6 s / 2.2 s / 2.8 s, `CHAIN_WIN`) so a 30-chain
+  stays possible against Mk III hulls; the end-of-mission chain bonus is capped at 60 links. That's 5 + 6 + 7 = 18 medals per mission, 432 in all. The tier picker opens from the
   mission board once a mission has anything past Mk I to show.
 - **Fleet of 9 ships**, on its own Fleet screen (the Hangar is upgrades only). Ember is the starter. The other 8 (Kestrel, Lifeline, Bulwark, Tempest, Stormcrow, Aegis, Phantom, Sovereign)
   are each assembled from 4 parts (Wings, Engine, Cockpit, Reactor) found in blue **salvage crates**. Each part lives on one

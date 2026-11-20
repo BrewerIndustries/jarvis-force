@@ -72,6 +72,9 @@ const TIERS = [
   { name: 'Mk II',  hp: 1.6, fire: 1.3,  bspd: 1.12, dmg: 1.3, stars: 1.6, extra: .35, desc: 'Tougher drones, heavier fire, extra waves. +60% stars.' },
   { name: 'Mk III', hp: 2.4, fire: 1.6,  bspd: 1.22, dmg: 1.6, stars: 2.3, extra: .7,  desc: 'Elite Legion squadrons. +130% stars.' },
 ];
+// Seconds between kills that keeps a chain alive. Higher tiers have tougher drones, so the window grows
+// with the tier instead of asking for the same 1.6s gap against 3x the hull.
+const CHAIN_WIN = [1.6, 2.2, 2.8];
 const BASE_MEDALS = 5;
 const tierMedalCount = k => BASE_MEDALS + k;
 function normRec(r) {
@@ -1432,8 +1435,9 @@ function killEnemy(e) {
   if (e.type === 'hive') { save.stats.hives++; shake = 10; }
   if (e.counted) run.kills++;
   save.stats.kills++;
-  run.combo = (gameT - run.lastKill < 1.6) ? run.combo + 1 : 1;
-  run.lastKill = gameT; run.comboT = 1.6;
+  const win = CHAIN_WIN[LV.tier || 0];
+  run.combo = (gameT - run.lastKill < win) ? run.combo + 1 : 1;
+  run.lastKill = gameT; run.comboT = win;
   run.bestCombo = Math.max(run.bestCombo, run.combo);
   dropStars(e.x, e.y, e.stars);
   if (e.type !== 'scout' && Math.random() < .07) pickups.push({ kind: 'hp', x: e.x, y: e.y, vx: rand(-40, 40), vy: -60, t: 0 });
@@ -1547,6 +1551,15 @@ function update(dt) {
   if (!LV.rush && !boss && LV.tl.length === 0 && levelT > LV.len + 2) {
     const alive = enemies.some(e => !e.neutral && !e.dead);
     if (!alive || levelT > LV.len + 9) spawnBoss();
+  }
+  // Safety net: a level that has been cleared must always end. If the boss died but its death never
+  // started the outro, or the boss entity vanished, finish the mission rather than hang on an empty sky.
+  if (!run.done && !run.endT && !LV.rush) {
+    if (boss && !boss.dead && enemies.indexOf(boss) < 0) boss = null;
+    const noBoss = !boss || boss.dead;
+    if (noBoss && LV.tl.length === 0 && levelT > LV.len + 12 && !enemies.some(e => !e.neutral && !e.dead)) {
+      run.endT = 1;
+    }
   }
   if (LV.rush && LV.tl.length === 0 && levelT > LV.len + 4 && !run.endT) run.endT = 2;
 
@@ -2404,7 +2417,7 @@ function drawHUD() {
     ctx.textAlign = 'center'; ctx.font = '700 15px Orbitron, sans-serif';
     ctx.fillStyle = `rgba(255,${200 - Math.min(run.combo, 60) * 2},80,${.55 + run.comboT / 3.2})`;
     ctx.fillText(`CHAIN ${run.combo}  ×${comboMult().toFixed(2)}`, W / 2, 66);
-    const cw = 100 * run.comboT / 1.6;
+    const cw = 100 * run.comboT / (CHAIN_WIN[LV.tier || 0] || 1.6);
     ctx.fillStyle = 'rgba(255,200,80,.22)'; ctx.fillRect(W / 2 - 50, 72, 100, 3);
     ctx.fillStyle = 'rgba(255,214,120,.85)'; ctx.fillRect(W / 2 - 50, 72, cw, 3);
   }
@@ -2670,7 +2683,7 @@ function finishLevel(success) {
   let story = null, unlockedTier = null;
   save.stats.missions++;
   save.stats.bestCombo = Math.max(save.stats.bestCombo, run.bestCombo);
-  if (run.bestCombo >= 10) { const cb = run.bestCombo * 5; lines.push([`Best chain ×${run.bestCombo}`, cb]); total += cb; }
+  if (run.bestCombo >= 10) { const cb = Math.min(run.bestCombo, 60) * 5; lines.push([`Best chain ×${run.bestCombo}`, cb]); total += cb; }
 
   if (LV.rush) {
     title = success ? 'STAR RUSH CLEARED' : 'STAR RUSH ENDED';
