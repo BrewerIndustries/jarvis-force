@@ -24,6 +24,21 @@ TARGETS = {
     "gunship": 156,
     "heli": 104,
     "diver": 76,
+    "turret": 76,
+    "tank": 92,
+    "bomber": 116,
+    "sniper": 80,
+    "splitter": 96,
+    "carrier": 208,
+    "hive": 224,
+    "lifter": 132,
+    "mine": 60,
+    "boss_manta": 380,
+    "boss_colossus": 380,
+    "boss_maw": 380,
+    "boss_thorn": 380,
+    "boss_cell": 380,
+    "boss_eye": 380,
 }
 
 
