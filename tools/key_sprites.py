@@ -39,6 +39,18 @@ TARGETS = {
     "boss_thorn": 380,
     "boss_cell": 380,
     "boss_eye": 380,
+    "ship_kestrel": 152,
+    "ship_lifeline": 152,
+    "ship_bulwark": 152,
+    "ship_tempest": 152,
+    "ship_aegis": 152,
+    "ship_stormcrow": 152,
+    "ship_phantom": 152,
+    "ship_sovereign": 152,
+    "survivor": 80,
+    "cache": 84,
+    "salvage": 100,
+    "part": 96,
 }
 
 

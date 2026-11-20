@@ -117,8 +117,9 @@ Everything is procedural Canvas 2D with a pseudo-3D look:
 - Bosses carry battle damage as their hull fails: scorch patches past 28%, smoke past 50%, open fire past 78%,
   plus a thruster wash under the hull. The HUD is drawn on glass panels (`panel()`) with a segmented hull readout,
   a glowing star counter and a boss plate with a bright leading edge. Stars on the field carry a warm bloom.
-- **Rendered sprite art** for the hero jet, every Legion unit and all six bosses (the vanguard variant reuses its
-  sector boss art, scaled to its radius).
+- **Rendered sprite art** for every ship in the fleet (all nine liveries), every Legion unit, all six bosses (the
+  vanguard variant reuses its sector boss art, scaled to its radius), and the pickups: survivor raft, supply cache,
+  salvage crate and ship part.
 - **Rendered sprite art** for the hero jet and every Legion unit: scout, fighter, gunship, helicopter, diver, sniper,
   splitter (mini reuses it at half size), bomber, lifter, carrier, hive, mine, turret and tank.
   `tools/key_sprites.py` keys the generated art off its magenta backdrop (a magenta-ness key with despill, not a

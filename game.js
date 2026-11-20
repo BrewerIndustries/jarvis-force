@@ -553,11 +553,15 @@ const SPR = {
 // shadow pass, built by tinting the same pixels.
 const RASTER = {};
 function loadRaster() {
-  const list = [['jet', 152], ['scout', 72], ['fighter', 92], ['gunship', 156], ['heli', 104], ['diver', 76],
-                ['turret', 76], ['tank', 92], ['bomber', 116], ['sniper', 80], ['splitter', 96],
-                ['carrier', 208], ['hive', 224], ['lifter', 132], ['mine', 60],
-                ['boss_manta', 380], ['boss_colossus', 380], ['boss_maw', 380], ['boss_thorn', 380],
-                ['boss_cell', 380], ['boss_eye', 380]];
+  const list = [
+    ['jet', 152], ['scout', 72], ['fighter', 92], ['gunship', 156], ['heli', 104], ['diver', 76],
+    ['turret', 76], ['tank', 92], ['bomber', 116], ['sniper', 80], ['splitter', 96],
+    ['carrier', 208], ['hive', 224], ['lifter', 132], ['mine', 60],
+    ['boss_manta', 380], ['boss_colossus', 380], ['boss_maw', 380], ['boss_thorn', 380], ['boss_cell', 380], ['boss_eye', 380],
+    ['ship_kestrel', 152], ['ship_lifeline', 152], ['ship_bulwark', 152], ['ship_tempest', 152],
+    ['ship_aegis', 152], ['ship_stormcrow', 152], ['ship_phantom', 152], ['ship_sovereign', 152],
+    ['survivor', 80], ['cache', 84], ['salvage', 100], ['part', 96],
+  ];
   for (const [id, hpx] of list) {
     const im = new Image();
     im.onload = () => {
@@ -1993,7 +1997,7 @@ function shipArt(id) {
   return (shipArtd[id] = { art: c, shadow: sh, size });
 }
 function drawPlayerShip(x, y, tilt, scale = 1, id = save.ship) {
-  const S = shipById(id), art = shipArt(id), ras = id === 'ember' ? RASTER.jet : null;
+  const S = shipById(id), art = shipArt(id), ras = RASTER[id === 'ember' ? 'jet' : 'ship_' + id];
   ctx.save(); ctx.translate(x, y); ctx.scale(scale * (1 - Math.abs(tilt) * .25), scale);
   if (ras) { // rendered hero art; engines are still drawn live on top
     if (SHADOW) { drawRaster(ras, 0, 0); ctx.restore(); return; }
@@ -2138,6 +2142,7 @@ function drawEnemy(e) {
       ctx.fillStyle = col; ctx.beginPath(); ctx.arc(0, 0, 11, 0, 7); ctx.fill();
       ctx.rotate(e.ang - Math.PI / 2); ctx.fillStyle = '#20232a'; ctx.fillRect(-3, 0, 6, 22); break;
     case 'cache':
+      if (RASTER.cache) { drawRaster(rasterFor('cache'), 0, 0); break; }
       ctx.fillStyle = e.flash > 0 ? '#fff' : '#8a6a24'; ctx.fillRect(-16, -16, 32, 32);
       ctx.strokeStyle = '#ffd34d'; ctx.lineWidth = 3; ctx.strokeRect(-16, -16, 32, 32);
       ctx.fillStyle = '#ffd34d'; star(0, 0, 9, 0); ctx.fill(); break;
@@ -2191,6 +2196,7 @@ function drawEnemy(e) {
       ctx.fillStyle = '#ff3b2e'; ctx.beginPath(); ctx.arc(0, 0, 7, 0, 7); ctx.fill();
       break; }
     case 'salvage': {
+      if (RASTER.salvage) { drawRaster(rasterFor('salvage'), 0, 0); break; }
       const pulse = (gameT * 1.2) % 1;
       ctx.strokeStyle = `rgba(127,227,255,${1 - pulse})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, 22 + pulse * 22, 0, 7); ctx.stroke();
       ctx.fillStyle = e.flash > 0 ? '#fff' : '#1d4a63'; ctx.fillRect(-19, -19, 38, 38);
@@ -2198,6 +2204,12 @@ function drawEnemy(e) {
       gear(0, 0, 9, '#7fe3ff', e.t);
       break; }
     case 'survivor': {
+      if (RASTER.survivor) {
+        drawRaster(rasterFor('survivor'), 0, 0);
+        if (e.prog > 0) { ctx.strokeStyle = '#4cdf8a'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(0, 0, 26, -Math.PI / 2, -Math.PI / 2 + e.prog * Math.PI * 2); ctx.stroke(); }
+        ctx.fillStyle = '#4cdf8a'; ctx.font = '700 11px Orbitron, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('SOS', 0, 26);
+        break;
+      }
       const pulse = (gameT * 1.5) % 1;
       ctx.strokeStyle = `rgba(76,223,138,${1 - pulse})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, 18 + pulse * 26, 0, 7); ctx.stroke();
       ctx.fillStyle = '#e46f2b'; ctx.beginPath(); ctx.ellipse(0, 4, 16, 9, 0, 0, 7); ctx.fill();
@@ -2454,7 +2466,8 @@ function render() {
     } else if (p.kind === 'part') {
       const bob = Math.sin(p.t * 5) * 3;
       ctx.fillStyle = 'rgba(127,227,255,.25)'; ctx.beginPath(); ctx.arc(p.x, p.y + bob, 22, 0, 7); ctx.fill();
-      gear(p.x, p.y + bob, 10, '#bff3ff', p.t * 2);
+      if (RASTER.part) drawRaster(RASTER.part, p.x, p.y + bob);
+      else gear(p.x, p.y + bob, 10, '#bff3ff', p.t * 2);
       ctx.fillStyle = '#bff3ff'; ctx.font = '700 10px Orbitron, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('PART', p.x, p.y + bob + 32);
     } else {
       ctx.fillStyle = '#4cdf8a'; ctx.beginPath(); ctx.arc(p.x, p.y, 11, 0, 7); ctx.fill();
