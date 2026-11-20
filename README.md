@@ -85,7 +85,7 @@ Space/B or the EMP button = EMP charge · P/Esc or the ⏸ button = pause. The s
   Every sector has buildings: drowned tower blocks, Legion outposts in the peaks, sea rigs, city blocks, moorland farms and Core blocks.
 - **6 Star Rush bonus stages** (one per sector, unlocked by beating its boss). No enemy fire, stars everywhere.
 - **A classified bay** opens once every ordinary upgrade is maxed: five one-time secret fits (Overclock, Aegis Prime,
-  Graviton Coil, Phoenix Core, Railgun) at 3,000-8,000 stars. The section only renders when the hangar is complete, and
+  Graviton Coil, Phoenix Core, Railgun) at 30,000-80,000 stars. The section only renders when the hangar is complete, and
   a toast marks the unlock.
 - **20 upgrades** in Jarvis's hangar: Pulse Cannon, Autoloader, Wing Guns, Seeker Missiles, Arc Lance (beam),
   Wingman Drones, Hull Plating, Deflector shield, Repair Nanites, EMP Charges, Star Magnet, Salvage Scanner

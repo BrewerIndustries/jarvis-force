@@ -217,15 +217,15 @@ const UPG = [
 ];
 // Hidden tier: only offered once every ordinary upgrade is maxed. Each is a one-time buy.
 const SECRET = [
-  { id: 's_overclock', name: 'Overclock', max: 1, base: 4000, g: 1, secret: 1,
+  { id: 's_overclock', name: 'Overclock', max: 1, base: 40000, g: 1, secret: 1,
     desc: 'Jarvis rewires the autoloader past its rated limit.', fx: () => '+22% fire rate, every gun' },
-  { id: 's_aegis', name: 'Aegis Prime', max: 1, base: 4500, g: 1, secret: 1,
+  { id: 's_aegis', name: 'Aegis Prime', max: 1, base: 45000, g: 1, secret: 1,
     desc: 'A second deflector lattice, folded under the hull.', fx: () => '+60 shield · +2.5 HP/s repair' },
-  { id: 's_grav', name: 'Graviton Coil', max: 1, base: 3000, g: 1, secret: 1,
+  { id: 's_grav', name: 'Graviton Coil', max: 1, base: 30000, g: 1, secret: 1,
     desc: 'Salvage comes to you. Politely, but quickly.', fx: () => '2x magnet · +15% star value' },
-  { id: 's_phoenix', name: 'Phoenix Core', max: 1, base: 6000, g: 1, secret: 1,
+  { id: 's_phoenix', name: 'Phoenix Core', max: 1, base: 60000, g: 1, secret: 1,
     desc: 'A second ejection seat, built from the first one\'s mistakes.', fx: () => 'One extra revive per mission' },
-  { id: 's_rail', name: 'Railgun', max: 1, base: 8000, g: 1, secret: 1,
+  { id: 's_rail', name: 'Railgun', max: 1, base: 80000, g: 1, secret: 1,
     desc: 'Main-gun rounds punch through a drone and keep going.', fx: () => 'Main gun pierces one extra enemy' },
 ];
 const allMaxed = () => UPG.every(u => ul(u.id) >= u.max);
