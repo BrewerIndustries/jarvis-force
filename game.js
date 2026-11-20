@@ -215,6 +215,22 @@ const UPG = [
   { id: 'revive', name: 'Ejection Protocol', max: 1, base: 1500, g: 1, desc: 'Once per mission, I pull you back from a fatal hit.',
     fx: l => l ? 'Armed' : 'Not installed' },
 ];
+// Hidden tier: only offered once every ordinary upgrade is maxed. Each is a one-time buy.
+const SECRET = [
+  { id: 's_overclock', name: 'Overclock', max: 1, base: 4000, g: 1, secret: 1,
+    desc: 'Jarvis rewires the autoloader past its rated limit.', fx: () => '+22% fire rate, every gun' },
+  { id: 's_aegis', name: 'Aegis Prime', max: 1, base: 4500, g: 1, secret: 1,
+    desc: 'A second deflector lattice, folded under the hull.', fx: () => '+60 shield · +2.5 HP/s repair' },
+  { id: 's_grav', name: 'Graviton Coil', max: 1, base: 3000, g: 1, secret: 1,
+    desc: 'Salvage comes to you. Politely, but quickly.', fx: () => '2x magnet · +15% star value' },
+  { id: 's_phoenix', name: 'Phoenix Core', max: 1, base: 6000, g: 1, secret: 1,
+    desc: 'A second ejection seat, built from the first one\'s mistakes.', fx: () => 'One extra revive per mission' },
+  { id: 's_rail', name: 'Railgun', max: 1, base: 8000, g: 1, secret: 1,
+    desc: 'Main-gun rounds punch through a drone and keep going.', fx: () => 'Main gun pierces one extra enemy' },
+];
+const allMaxed = () => UPG.every(u => ul(u.id) >= u.max);
+const anySecret = () => SECRET.some(u => ul(u.id) >= u.max);
+
 const ul = id => save.up[id] || 0;
 const upCost = u => Math.round(u.base * Math.pow(u.g, ul(u.id)) / 10) * 10;
 function streams(l) { return l >= 8 ? 4 : l >= 5 ? 3 : l >= 2 ? 2 : 1; }
@@ -287,14 +303,14 @@ function stats(up, shipId) {
   const ul = up ? (id => up[id] || 0) : (id => save.up[id] || 0);
   const c = ul('cannon'), m = shipById(shipId || save.ship).mods, g = k => m[k] ?? 1, dm = g('dmg');
   return {
-    dmg: 10 * (1 + .3 * c) * dm, streams: streams(c), fireInt: fireInt(ul('rate')) / g('fire'),
+    dmg: 10 * (1 + .3 * c) * dm, streams: streams(c), fireInt: fireInt(ul('rate')) / g('fire') * (ul('s_overclock') ? .82 : 1),
     wings: ul('wings'), wdmg: 6 * (1 + .3 * ul('wings')) * dm,
     mis: ul('missiles'), mdmg: 22 * (1 + .35 * ul('missiles')) * dm, misInt: misInt(ul('missiles')),
     las: ul('laser'), ldps: 70 * (1 + .4 * ul('laser')) * dm, lasInt: lasInt(ul('laser')),
     drones: ul('drones'), ddmg: 7 * (1 + .25 * c) * dm,
-    maxHp: Math.round(maxHp(ul('hull')) * g('hp')), shield: ul('shield') * 22 + (m.shield || 0), regen: ul('regen') * 1.2,
-    bombs: 1 + ul('bomb'), mag: magR(ul('magnet')) * g('magnet'), fortune: (1 + .1 * ul('fortune')) * g('stars'),
-    crit: ul('crit') * .06, revive: ul('revive') > 0,
+    maxHp: Math.round(maxHp(ul('hull')) * g('hp')), shield: ul('shield') * 22 + (m.shield || 0) + (ul('s_aegis') ? 60 : 0), regen: ul('regen') * 1.2 + (ul('s_aegis') ? 2.5 : 0),
+    bombs: 1 + ul('bomb'), mag: magR(ul('magnet')) * g('magnet') * (ul('s_grav') ? 2 : 1), fortune: (1 + .1 * ul('fortune')) * g('stars') * (ul('s_grav') ? 1.15 : 1),
+    crit: ul('crit') * .06, revive: ul('revive') > 0, revives: (ul('revive') ? 1 : 0) + (ul('s_phoenix') ? 1 : 0), pierce: ul('s_rail') ? 1 : 0,
     speed: g('speed') * (1 + .05 * ul('thrust')), rescue: g('rescue') * (1 + .25 * ul('winch')), rescueStars: 1 + .1 * ul('winch'),
     barrier: m.barrier || 0, hitbox: 7 * g('hitbox'), invMul: g('inv'), armor: .05 * ul('armor'),
     flak: ul('flak'), fdmg: 14 * (1 + .35 * ul('flak')) * dm, flakInt: flakInt(ul('flak')),
@@ -466,7 +482,7 @@ function newRun(level) {
   LV = level; ST = stats(); curSector = LV.s; TM = TIERS[LV.tier || 0]; TH = LV.rush ? NO_THREAT : threat(LV.L, LV.tier || 0, ST);
   P = { x: W / 2, y: H - 160, tx: null, ty: null, vx: 0, r: ST.hitbox, hp: ST.maxHp, shield: ST.shield, shDelay: 0, inv: 1.5,
     bar: ST.barrier > 0, barT: 0,
-    fireT: 0, wingT: 0, misT: 1, lasT: 3, lasOn: 0, droT: .5, flakT: 1.5, wakeT: 0, dead: false, revived: false };
+    fireT: 0, wingT: 0, misT: 1, lasT: 3, lasOn: 0, droT: .5, flakT: 1.5, wakeT: 0, rev: ST.revives || 0, dead: false, revived: false };
   run = { stars: 0, baseCollected: 0, baseDropped: 0, kills: 0, total: 0, rescued: 0, damaged: false, bombs: ST.bombs,
     usedBomb: false, combo: 0, comboT: 0, bestCombo: 0, lastKill: -9, endT: 0, failT: 0, failed: false, rescueStars: 0, done: false,
     found: [], newShip: null };
@@ -1379,7 +1395,7 @@ function spawnBoss() {
 }
 
 /* ------------------------------ COMBAT ------------------------------ */
-function addPB(x, y, vx, vy, dmg, r, kind) { pb.push({ x, y, vx, vy, dmg, r, kind }); }
+function addPB(x, y, vx, vy, dmg, r, kind) { pb.push({ x, y, vx, vy, dmg, r, kind, pierce: kind === 'b' ? (ST.pierce || 0) : 0, lastHit: null }); }
 function eShoot(x, y, a, sp) {
   sp *= DIFFS[save.diff].bspd * TM.bspd * (1 + LV.s * .07);
   const b = { x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: 6, bolt: sp > 250 };
@@ -1457,8 +1473,8 @@ function hurtPlayer(d) {
   if (d > 0) { P.hp -= d; run.damaged = true; P.inv = .9 * ST.invMul; shake = 9; sparks(P.x, P.y, '#ff6a4a', 12); SND.hurt(sndPan(P.x)); }
   else { P.inv = .35; sparks(P.x, P.y, '#6fe3ff', 8); SND.shield(); }
   if (P.hp <= 0) {
-    if (ST.revive && !P.revived) {
-      P.revived = true; P.hp = ST.maxHp * .5; P.inv = 2.5; eb = []; flash = .5; SND.revive();
+    if (P.rev > 0) {
+      P.rev--; P.revived = true; P.hp = ST.maxHp * .5; P.inv = 2.5; eb = []; flash = .5; SND.revive();
       texts.push({ x: camX + W / 2, y: H / 2, s: 'EJECTION PROTOCOL — JARVIS HAS YOU', c: '#6fe3ff', t: 2, sz: 18 });
     } else {
       P.dead = true; run.failed = true; run.failT = 2; boom(P.x, P.y, 40); shake = 16; SND.bigBoom();
@@ -1577,10 +1593,12 @@ function update(dt) {
     if (b.life != null && (b.life -= dt) <= 0) { b.dead = true; continue; }
     if (b.y < -30 || b.y > H + 30 || b.x < XL - 30 || b.x > XR + 30) { b.dead = true; continue; }
     for (const e of enemies) {
-      if (e.dead || e.nohit || e.y < -e.r) continue;
+      if (e.dead || e.nohit || e.y < -e.r || e === b.lastHit) continue;
       if ((b.x - e.x) ** 2 + (b.y - e.y) ** 2 < (e.r + b.r) ** 2) {
-        hurtEnemy(e, b.dmg); b.dead = true; impact(b.x, b.y, '#cfeeff');
+        hurtEnemy(e, b.dmg); impact(b.x, b.y, '#cfeeff');
         if (b.kind === 'b' && ST.tesla && Math.random() < ST.tesla) zap(e);
+        if (b.pierce > 0) { b.pierce--; b.lastHit = e; break; } // railgun round carries on next frame
+        b.dead = true;
         break;
       }
     }
@@ -2836,22 +2854,36 @@ function buildFleetScreen() {
   });
 }
 
+function upgCard(u, secret) {
+  const l = ul(u.id), maxed = l >= u.max, c = upCost(u);
+  return `<div class="upg${secret ? ' secret' : ''}"><h4>${u.name}</h4><div class="d">${u.desc}</div>
+    <div class="fx">${u.fx(l)}${maxed || u.max === 1 ? '' : `  →  <span style="color:#fff">${u.fx(l + 1)}</span>`}</div>
+    <div class="lvlbar">${Array.from({ length: u.max }, (_, i) => `<i class="${i < l ? 'on' : ''}"></i>`).join('')}</div>
+    <div class="buy"><button class="btn small" data-u="${u.id}" ${maxed || save.stars < c ? 'disabled' : ''}>${maxed ? 'MAX' : 'Upgrade'}</button>${maxed ? '' : `<span>★ ${fmt(c)}</span>`}</div></div>`;
+}
 function buildHangar() {
   const cur = shipById(save.ship);
-  $('upgList').innerHTML = `<div class="flying"><img src="${shipIcon(cur.id)}" alt=""><span>Flying the <b>${cur.name}</b>. Every upgrade applies to every ship.</span><button class="btn small" data-go2="fleet">Fleet ›</button></div>` + UPG.map(u => {
-    const l = ul(u.id), maxed = l >= u.max, c = upCost(u);
-    return `<div class="upg"><h4>${u.name}</h4><div class="d">${u.desc}</div>
-      <div class="fx">${u.fx(l)}${maxed ? '' : `  →  <span style="color:#fff">${u.fx(l + 1)}</span>`}</div>
-      <div class="lvlbar">${Array.from({ length: u.max }, (_, i) => `<i class="${i < l ? 'on' : ''}"></i>`).join('')}</div>
-      <div class="buy"><button class="btn small" data-u="${u.id}" ${maxed || save.stars < c ? 'disabled' : ''}>${maxed ? 'MAX' : 'Upgrade'}</button>${maxed ? '' : `<span>★ ${fmt(c)}</span>`}</div></div>`;
-  }).join('');
+  // the classified bay only exists once every ordinary upgrade is maxed
+  if (allMaxed() && !save.seen.secret) {
+    save.seen.secret = 1; persist();
+    setTimeout(() => { toast('🔒 CLASSIFIED BAY UNLOCKED — Jarvis has something in the back room.'); SND.part(); }, 500);
+  }
+  const secret = allMaxed()
+    ? `<div class="secret-head"><b>CLASSIFIED BAY</b><span>Every upgrade is maxed. Jarvis has opened the back room; these are one-time fits.</span></div>` + SECRET.map(u => upgCard(u, true)).join('')
+    : '';
+  $('upgList').innerHTML = `<div class="flying"><img src="${shipIcon(cur.id)}" alt=""><span>Flying the <b>${cur.name}</b>. Every upgrade applies to every ship.</span><button class="btn small" data-go2="fleet">Fleet ›</button></div>` + secret + UPG.map(u => upgCard(u)).join('');
   $('upgList').querySelector('[data-go2]').onclick = () => go('fleet');
   $('upgList').querySelectorAll('[data-u]').forEach(b => b.onclick = () => {
-    const u = UPG.find(x => x.id === b.dataset.u), c = upCost(u);
-    if (save.stars < c || ul(u.id) >= u.max) return;
+    const u = UPG.concat(SECRET).find(x => x.id === b.dataset.u), c = upCost(u);
+    if (!u || save.stars < c || ul(u.id) >= u.max) return;
     save.stars -= c; save.up[u.id] = ul(u.id) + 1; persist(); checkAch(); SND.buy();
+    if (allMaxed() && !save.seen.secret) {
+      save.seen.secret = 1; persist();
+      setTimeout(() => { toast('🔒 CLASSIFIED BAY UNLOCKED — Jarvis has something in the back room.'); SND.part(); }, 400);
+    }
     const top = $('upgList').scrollTop; buildHangar(); $('upgList').scrollTop = top; refreshStars();
-    $('hangarQuip').textContent = `${u.name} upgraded. ${pick(['Lovely.', 'She purrs.', 'Calibrated.', 'Installed, tested, polished.', 'I am rather proud of that one.'])}`;
+    $('hangarQuip').textContent = u.secret ? `${u.name} fitted. ${pick(['I am not supposed to have that.', 'Do not tell the requisitions office.', 'That one is technically experimental.', 'Well. That is a lot of aircraft.'])}`
+      : `${u.name} upgraded. ${pick(['Lovely.', 'She purrs.', 'Calibrated.', 'Installed, tested, polished.', 'I am rather proud of that one.'])}`;
   });
 }
 

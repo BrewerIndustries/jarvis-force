@@ -158,3 +158,13 @@ canvas{position:absolute;inset:0;width:540px;height:960px;display:block}
 /* which build the playtester is actually running; bump with the ?v= on the scripts */
 .build-tag { position: absolute; left: 14px; bottom: 10px; font: 600 10px Rajdhani, sans-serif;
   letter-spacing: .12em; text-transform: uppercase; color: rgba(190, 225, 255, .38); pointer-events: none; }
+
+/* the classified bay: only rendered once every ordinary upgrade is maxed */
+.secret-head { margin: 14px 0 8px; padding: 10px 12px; border: 1px solid rgba(255, 90, 79, .45);
+  border-radius: 10px; background: linear-gradient(180deg, rgba(70, 16, 20, .55), rgba(20, 10, 14, .5)); }
+.secret-head b { display: block; font: 700 12px Orbitron, sans-serif; letter-spacing: .18em; color: #ff8a7a; }
+.secret-head span { font: 600 12px Rajdhani, sans-serif; color: #d9b3ad; }
+.upg.secret { border-color: rgba(255, 90, 79, .35); background: linear-gradient(160deg, rgba(48, 12, 16, .7), rgba(8, 12, 20, .8)); }
+.upg.secret h4 { color: #ffb3a6; }
+.upg.secret .btn { border-color: rgba(255, 90, 79, .5); color: #ffd7d0; }
+.upg.secret .btn:disabled { opacity: .5; }
