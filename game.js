@@ -698,7 +698,9 @@ function roofOf(o) { o.rx = o.x + (o.x - camX - W / 2) / W * .6 * o.h; o.ry = o.
 let solids = [];
 function updStructs() {
   solids = [];
-  for (const o of terrain) if (o.beh === 'tall' || (o.beh === 'dest' && !o.dead)) { roofOf(o); if (o.flash > 0) o.flash -= 1 / 30; if (o.ry > -80 && o.ry < H + 60) solids.push(o); }
+  // Tall towers are cover during the run, but once the boss arrives they stop being solid: a tower
+  // left on screen between you and the boss could absorb every shot and stall the fight.
+  for (const o of terrain) if ((o.beh === 'tall' && !boss) || (o.beh === 'dest' && !o.dead)) { roofOf(o); if (o.flash > 0) o.flash -= 1 / 30; if (o.ry > -80 && o.ry < H + 60) solids.push(o); }
   if (P.dead) return;
   for (const o of solids) {
     if (o.beh !== 'tall') continue;

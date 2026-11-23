@@ -81,7 +81,7 @@ Space/B or the EMP button = EMP charge · P/Esc or the ⏸ button = pause. The s
   - *Legion-held:* red roof roundel. Absorbs your fire and collapses for stars (HP scales with the mission and the threat level).
   - *Towers:* very tall, with a yellow hazard edge and a blinking red beacon. They are indestructible and block shots both ways,
     so they work as cover. Clipping one costs hull and shoves you aside. Towers stop spawning about 22s before the boss, so
-    boss arenas stay clear.
+    boss arenas stay clear, and any tower still on screen stops blocking shots the moment the boss arrives.
 
   Every sector has buildings: drowned tower blocks, Legion outposts in the peaks, sea rigs, city blocks, moorland farms and Core blocks.
 - **6 Star Rush bonus stages** (one per sector, unlocked by beating its boss). No enemy fire, stars everywhere.
