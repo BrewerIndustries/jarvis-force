@@ -594,6 +594,24 @@ function loadRaster() {
   }
 }
 loadRaster();
+// Rendered ground: one seamlessly tiling texture per sector biome (tools/gen_ground.py -> tools/tile_ground.py
+// -> sprites/ground_<biome>.jpg, 1344px = 2x a 672px logical tile). Same rule as the sprites: until a file
+// has loaded, or if it fails, drawGround() paints today's procedural ground.
+const GROUND = {}, GT = 672;
+for (const b of ['isles', 'peaks', 'seas', 'sprawl', 'storm', 'core']) {
+  const im = new Image();
+  im.onload = () => { GROUND[b] = im; };
+  im.src = 'sprites/ground_' + b + '.jpg';
+}
+// draws the tile in world space, keyed to world distance (bgScroll), so it moves with the terrain and never
+// pops. Stretched 8% across the 728px the procedural base covers (panned world plus shake margin); the tiles
+// overlap by a pixel so no seam shows at fractional rows. Two or three drawImage calls a frame, nothing else.
+function drawGroundTex(B) {
+  const im = GROUND[B]; if (!im) return false;
+  const off = bgScroll % GT;
+  for (let y = off - GT; y < H; y += GT) ctx.drawImage(im, XL - 30, y, WW + 60, GT + 1);
+  return true;
+}
 // Enemies keep one consistent Legion livery. Hue-rotating the whole sprite per sector was tried and
 // looked wrong: it turned gunmetal purple and wrecked the metal shading. Sector identity comes from
 // the terrain and the grade instead.
@@ -1087,8 +1105,9 @@ function drawTerrainKind(o, S) {
 
 // ground layers drawn under everything else
 function drawGround(S) {
-  const B = BIOMES[curSector], pal = PAL[B];
-  if (B === 'peaks' || B === 'sprawl' || B === 'storm') {
+  const B = BIOMES[curSector], pal = PAL[B], tex = drawGroundTex(B);
+  if (tex) { /* rendered ground replaces the flat base */ }
+  else if (B === 'peaks' || B === 'sprawl' || B === 'storm') {
     const g = ctx.createLinearGradient(0, 0, 0, H); g.addColorStop(0, pal.ground[1]); g.addColorStop(1, pal.ground[0]);
     ctx.fillStyle = g; ctx.fillRect(XL - 30, 0, WW + 60, H);
   } else {
@@ -1117,26 +1136,31 @@ function drawGround(S) {
     }
     ctx.globalAlpha = 1;
   } else if (B === 'peaks') {
+    if (tex) return; // the texture carries its own cracks
     ctx.fillStyle = 'rgba(0,0,0,.18)'; // cracked ash plain
     for (let i = 0; i < 26; i++) { const y = ((i * 131 + bgScroll) % (H + 60)) - 30, x = XL + (i * 211) % WW; ctx.fillRect(x, y, 2 + (i % 3), 18 + (i * 13) % 40); }
-  } else if (B === 'seas') drawWaves(S);
+  } else if (B === 'seas') drawWaves(S, tex);
   else if (B === 'sprawl') {
     const off = bgScroll % 300;
-    ctx.fillStyle = '#3b3f3a';
+    ctx.fillStyle = '#3b3f3a'; if (tex) ctx.globalAlpha = .6; // worn lanes over the rendered rubble
     for (const x of [-34, 96, 330, 560]) ctx.fillRect(x, 0, 30, H);
     for (let y = off - 300; y < H; y += 300) ctx.fillRect(XL - 30, y, WW + 60, 30);
     ctx.fillStyle = 'rgba(230,220,140,.35)';
     for (const x of [110]) for (let y = (bgScroll % 40) - 40; y < H; y += 40) ctx.fillRect(x, y, 2, 20);
     for (let y = off - 300; y < H; y += 300) for (let x = XL - 20; x < XR + 20; x += 40) ctx.fillRect(x, y + 14, 20, 2);
+    ctx.globalAlpha = 1;
+    if (tex) return; // the texture has its own moss
     ctx.fillStyle = 'rgba(70,140,60,.35)'; // moss bursting through the asphalt
     for (let i = 0; i < 14; i++) { const y = ((i * 157 + bgScroll) % (H + 60)) - 30; ctx.beginPath(); ctx.arc(XL + (i * 89) % WW, y, 10 + i % 4 * 5, 0, 7); ctx.fill(); }
-  } else if (B === 'storm') drawFields();
+  } else if (B === 'storm') { if (!tex) drawFields(); }
   else if (B === 'core') {
     const off = bgScroll % 64;
     ctx.strokeStyle = 'rgba(140,150,190,.10)'; ctx.lineWidth = 1;
     ctx.beginPath();
+    if (!tex) {
     for (let x = -128; x <= W + 128; x += 64) { ctx.moveTo(x + .5, 0); ctx.lineTo(x + .5, H); }
     for (let y = off - 64; y < H; y += 64) { ctx.moveTo(XL - 30, y + .5); ctx.lineTo(XR + 30, y + .5); }
+    }
     ctx.stroke();
     for (const [x, c] of [[-40, pal.cyan], [64, pal.neon], [256, pal.cyan], [448, pal.neon], [580, pal.cyan]]) { // conduits with pulses running down them
       ctx.fillStyle = c; ctx.globalAlpha = .25; ctx.fillRect(x - 3, 0, 6, H); ctx.globalAlpha = 1;
@@ -1146,7 +1170,9 @@ function drawGround(S) {
 }
 
 // rolling swell for the northern sea: each row is a wave face, lit at the crest and dark in the trough
-function drawWaves(S) {
+// Over the rendered sea the wave faces are drawn translucent so the ice and slush show through; crests,
+// whitecaps and foam stay at full strength, so the swell reads exactly as before.
+function drawWaves(S, tex) {
   const A = 5 + bgVar * 3.2, sp = 46, sc = bgScroll * 1.12, off = sc % sp, base = Math.floor(sc / sp);
   const hi = shade(S.sea[0], 1.3), lo = shade(S.sea[1], .85);
   for (let r = -1; r < H / sp + 2; r++) {
@@ -1158,7 +1184,7 @@ function drawWaves(S) {
     for (let x = x0 + 12; x <= x1; x += 12) ctx.lineTo(x, yAt(x));
     ctx.lineTo(x1, y0 + sp + amp * 2.4); ctx.lineTo(x0, y0 + sp + amp * 2.4); ctx.closePath();
     const g = ctx.createLinearGradient(0, y0 - amp, 0, y0 + sp); g.addColorStop(0, hi); g.addColorStop(.35, S.sea[0]); g.addColorStop(1, lo);
-    ctx.fillStyle = g; ctx.fill();
+    ctx.fillStyle = g; if (tex) ctx.globalAlpha = .42; ctx.fill(); ctx.globalAlpha = 1;
     ctx.strokeStyle = `rgba(235,248,255,${.16 + bgVar * .06 + hv * .05})`; ctx.lineWidth = 1.3 + bgVar * .5;
     ctx.beginPath(); for (let x = x0; x <= x1; x += 12) { const y = yAt(x); x > x0 ? ctx.lineTo(x, y) : ctx.moveTo(x, y); } ctx.stroke();
     if (bgVar >= 1) { // whitecaps on the highest crests

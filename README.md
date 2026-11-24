@@ -110,7 +110,7 @@ Tiny hitbox, slower bullets, a recharging shield that blocks the "no damage" pen
 an auto-revive upgrade, and the stars-kept-on-death rule.
 
 ### Rendering
-Everything is procedural Canvas 2D with a pseudo-3D look:
+Canvas 2D with a pseudo-3D look; ships, units, bosses, pickups and the ground are rendered art over procedural fallbacks:
 - Terrain prisms (`prism()`) lean away from the screen centre as they scroll past, and walls are shaded from a top-left light.
 - Shadows for terrain, jets and bosses are drawn into one black offscreen layer (`shadowPass()`) at half resolution and
   upscaled when composited, so contact shadows read as penumbra rather than hard black shapes (and it is cheaper).
@@ -131,6 +131,18 @@ Everything is procedural Canvas 2D with a pseudo-3D look:
   2x the in-game size and writes `sprites/<id>.png`. `game.js` loads them at boot and falls back to the procedural
   art when a file is missing, so the site never depends on the images. Enemy sprites are hue-rotated per sector and
   cached, which keeps the Legion's per-sector colour identity.
+- **Rendered ground:** each sector biome has one seamlessly tiling ground texture (`sprites/ground_<biome>.jpg`,
+  1344px = 2x a 672px logical tile that covers the panned world). `tools/gen_ground.py` asks the image model for a
+  top-down tileable texture per biome (writes `art-src/ground_<biome>.webp`; reads the OpenRouter key from
+  `~/.config/openrouter.env` at run time), and `tools/tile_ground.py` makes it truly seamless (each edge cross-faded
+  with the band past the opposite edge), tones it down under the sprites and writes the JPEG. `drawGroundTex()` draws
+  it in world space keyed to `bgScroll`, so it moves with the terrain and never pops: two or three `drawImage` calls a
+  frame, no gradients. It replaces only the flat base: the sea swell is still drawn on top (wave faces go translucent
+  so the ice shows through; crests, whitecaps and foam are unchanged), the Sprawl roads become worn lanes, the Core
+  conduits still pulse, and grades, distance haze, storm rain haze and cloud banks all sit over it as before.
+  Procedural extras the texture already carries (ash cracks, moss, moorland fields, the Core grid) are skipped. If a
+  file is missing or fails to load, the procedural ground is drawn exactly as before. Buildings and props stay
+  procedural prisms.
 - Buildings are prisms with windows mapped onto their visible walls (`wallWindows()`): each wall is a quad, so a
   window is a small quad interpolated between its base edge and the leaned top edge. City blocks and Legion towers
   use it; sea rigs get cross-braced legs, a reflection and a helipad (skipped on Legion-held rigs, which carry the
