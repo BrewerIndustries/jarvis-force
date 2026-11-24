@@ -88,6 +88,22 @@ function normRec(r) {
   r.done = !!r.done;
   return r;
 }
+// ---- mission rank: S/A/B/C from kills, rescues, hits taken, best chain and how fast the boss/sky fell
+const RANKS = ['C', 'B', 'A', 'S'], RANK_COL = { S: '#ffd34d', A: '#4cdf8a', B: '#5ad8ff', C: '#9fb7cf' };
+function missionRank() {
+  const kp = run.total ? run.kills / run.total : 1, rp = LV.survivors ? Math.min(1, run.rescued / LV.survivors) : 1;
+  const over = Math.max(0, levelT - LV.len); // time spent past the scripted run: the boss fight or mopping up
+  const parts = [
+    ['Targets', Math.round(25 * kp), 25],
+    ['Rescues', Math.round(15 * rp), 15],
+    ['Hull', Math.max(0, 30 - 10 * (run.hits || 0)), 30],
+    ['Chain', Math.min(15, Math.round(run.bestCombo / 2)), 15],
+    ['Speed', Math.round(15 * clamp(1 - (over - 30) / 70, 0, 1)), 15],
+  ];
+  const pts = parts.reduce((a, p) => a + p[1], 0);
+  return { pts, parts, r: pts >= 90 ? 'S' : pts >= 75 ? 'A' : pts >= 55 ? 'B' : 'C' };
+}
+const bestRank = (L, k) => { const r = save.lv[L]; return r && r.rk ? (k == null ? r.rk.reduce((b, x) => x && (!b || RANKS.indexOf(x) > RANKS.indexOf(b)) ? x : b, null) : r.rk[k]) : null; };
 const rec = L => save.lv[L] || (save.lv[L] = normRec());
 const tierCleared = (L, k) => !!save.lv[L] && save.lv[L].t[k].every(Boolean);
 const tierOpen = (L, k) => k === 0 ? unlocked(L) : tierCleared(L, k - 1);
@@ -1577,7 +1593,7 @@ function hurtPlayer(d) {
   d *= DIFFS[save.diff].dmg * TM.dmg * TH.dmg * (1 - ST.armor);
   P.shDelay = 3;
   if (P.shield > 0) { const a = Math.min(P.shield, d); P.shield -= a; d -= a; }
-  if (d > 0) { P.hp -= d; run.damaged = true; P.inv = .9 * ST.invMul; shake = 9; sparks(P.x, P.y, '#ff6a4a', 12); SND.hurt(sndPan(P.x)); stopFor(.07); buzz(60, .8); }
+  if (d > 0) { P.hp -= d; run.damaged = true; run.hits = (run.hits || 0) + 1; P.inv = .9 * ST.invMul; shake = 9; sparks(P.x, P.y, '#ff6a4a', 12); SND.hurt(sndPan(P.x)); stopFor(.07); buzz(60, .8); }
   else { P.inv = .35; sparks(P.x, P.y, '#6fe3ff', 8); SND.shield(); }
   if (P.hp <= 0) {
     if (P.rev > 0) {
@@ -2955,7 +2971,7 @@ function finishLevel(success) {
   let total = collected + Math.round(run.rescueStars);
   const newly = Array(nM).fill(0);
   let title = success ? 'MISSION COMPLETE' : 'MISSION FAILED';
-  let story = null, unlockedTier = null;
+  let story = null, unlockedTier = null, rank = null;
   save.stats.missions++;
   save.stats.bestCombo = Math.max(save.stats.bestCombo, run.bestCombo);
   if (run.bestCombo >= 10) { const cb = Math.min(run.bestCombo, 60) * 5; lines.push([`Best chain ×${run.bestCombo}`, cb]); total += cb; }
@@ -2979,6 +2995,9 @@ function finishLevel(success) {
     }
     const firstClear = !r.done;
     r.done = true;
+    rank = missionRank(); r.rk = r.rk || [];
+    const prev = r.rk[tier]; if (!prev || RANKS.indexOf(rank.r) > RANKS.indexOf(prev)) { r.rk[tier] = rank.r; rank.best = !!prev; }
+    if (rank.r === 'S') save.stats.sRanks = (save.stats.sRanks || 0) + 1;
     if (save.diff === 2) save.stats.vetClears++;
     if (firstClear && L === NLEVELS - 1) story = { title: 'TRANSMISSION · THE END', lines: STORY.ending };
   }
@@ -2992,6 +3011,9 @@ function finishLevel(success) {
   const tm = !LV.rush && save.lv[L] ? save.lv[L].t[tier] : [];
   $('resMedals').innerHTML = LV.rush ? '' : MEDALS.slice(0, nM).map((m, i) =>
     `<div class="medal ${tm[i] ? 'on' : ''} ${newly[i] ? 'new' : ''}"><div class="m">${m.ic}</div>${m.n}</div>`).join('');
+  $('resRank').innerHTML = rank ? `<div class="rk" style="--rc:${RANK_COL[rank.r]}">${rank.r}</div><div class="rkp">${rank.parts.map(p => `<span>${p[0]} <b>${p[1]}</b>/${p[2]}</span>`).join('')}${rank.best ? '<em>NEW BEST RANK</em>' : ''}</div>` : '';
+  $('resRank').style.display = rank ? '' : 'none';
+  if (rank) setTimeout(() => SND.medal(rank.r === 'S' ? 3 : 1), 900);
   $('resLines').innerHTML = lines.map(l => `<div><span>${l[0]}</span><b>${l[1] == null ? '✓' : '+' + fmt(l[1])}</b></div>`).join('') +
     (unlockedTier ? `<div><span style="color:#3fd8ff">🔓 ${TIERS[unlockedTier].name} unlocked for mission ${LV.label.split(' ')[0]}</span><span></span></div>` : '') +
     `<div class="total"><span>Total</span><span>★ ${fmt(total)}</span></div>`;
@@ -3074,7 +3096,7 @@ function buildMap() {
       const L = s * LEVELS_PER + i, r = save.lv[L], ok = unlocked(L), bossL = i === LEVELS_PER - 1, top = ok ? topTier(L) : 0;
       const rows = TIERS.map((_, k) => `<div class="pips ${tierOpen(L, k) ? '' : 'dim'}">${Array.from({ length: tierMedalCount(k) }, (_, m) => `<i class="pip ${r?.t[k][m] ? 'on' : ''}"></i>`).join('')}</div>`).join('');
       const salv = TIERS.some((_, k) => { const pa = partAt(L, k); return pa && !hasPart(pa.ship, pa.idx); });
-      html += `<div class="lvl ${ok ? '' : 'locked'} ${r?.done ? 'done' : ''} ${bossL ? 'boss' : ''}" data-l="${ok ? L : ''}">${salv ? '<i class="pd" title="Ship part to find">🔩</i>' : ''}<b>${s + 1}-${i + 1}</b><small class="mk">${bossL ? 'BOSS · ' : ''}${TIERS[top].name}</small><div class="tiers">${rows}</div></div>`;
+      html += `<div class="lvl ${ok ? '' : 'locked'} ${r?.done ? 'done' : ''} ${bossL ? 'boss' : ''}" data-l="${ok ? L : ''}">${salv ? '<i class="pd" title="Ship part to find">🔩</i>' : ''}${bestRank(L) ? `<i class="rkb" style="--rc:${RANK_COL[bestRank(L)]}" title="Best rank">${bestRank(L)}</i>` : ''}<b>${s + 1}-${i + 1}</b><small class="mk">${bossL ? 'BOSS · ' : ''}${TIERS[top].name}</small><div class="tiers">${rows}</div></div>`;
     }
     html += '</div>';
     const rOk = !!save.lv[s * LEVELS_PER + LEVELS_PER - 1]?.done;
