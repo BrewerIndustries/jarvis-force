@@ -441,6 +441,15 @@ function addWave(tl, w, t, R, s) {
   }
 }
 
+// ---- mission types: most missions get a twist on top of the usual sweep. Bosses stay plain.
+const MODES = {
+  escort: { name: 'ESCORT', brief: 'Keep the convoy alive to the end of the run', c: '#ffb347' },
+  defend: { name: 'DEFEND', brief: 'Hold the line over the survivor camp until the airlift', c: '#4cdf8a' },
+  evac:   { name: 'EVACUATION', brief: 'Pull survivors out before their flares burn out', c: '#ff7a5a' },
+  night:  { name: 'NIGHT RAID', brief: 'Fly by searchlight. Their guns still glow', c: '#9fb8ff' },
+};
+const MODE_OF = { 1: 'escort', 2: 'evac', 4: 'night', 5: 'defend', 8: 'escort', 9: 'night', 10: 'evac', 12: 'defend', 14: 'night',
+  16: 'evac', 17: 'escort', 18: 'defend', 20: 'night', 21: 'evac', 22: 'escort' };
 function genLevel(L, tier = 0) {
   const s = Math.floor(L / LEVELS_PER), idx = L % LEVELS_PER, R = rng(L * 7919 + 13);
   const len = 62 + idx * 7 + s * 5;
@@ -462,13 +471,19 @@ function genLevel(L, tier = 0) {
   }
   // the Hive: launches drones until destroyed
   if ((s >= 1 && idx === 2) || (s >= 3 && idx >= 1)) addWave(tl, 'hive', len * .72, R, s);
-  const nSurv = 3 + Math.floor(s / 2);
-  for (let i = 0; i < nSurv; i++) tl.push({ t: len * (i + .5) / nSurv + R() * 4 - 2, type: 'survivor', x: 70 + R() * (W - 140) });
+  const mode = MODE_OF[L] || null;
+  if (mode === 'defend') { // the camp rolls in, the world stops, and the Legion throws everything at it
+    const tc = len * .26; tl.push({ t: tc, type: '_camp', x: W / 2 });
+    for (let t2 = tc + 11; t2 < tc + 38; t2 += 3.2 + R() * 1.2) { const n0 = tl.length; addWave(tl, ['divers', 'helis', 'fighters', 'vee', 'tanks'][Math.floor(R() * 5)], t2, R, s); for (let k = n0; k < tl.length; k++) tl[k].tgt = 1; }
+  }
+  if (mode === 'escort') for (let t2 = 8; t2 < len - 4; t2 += 9 + R() * 4) { const n0 = tl.length; addWave(tl, 'divers', t2, R, s); for (let k = n0; k < tl.length; k++) tl[k].tgt = 1; }
+  const nSurv = 3 + Math.floor(s / 2) + (mode === 'evac' ? 3 : 0);
+  for (let i = 0; i < nSurv; i++) tl.push({ t: len * (i + .5) / nSurv + R() * 4 - 2, type: 'survivor', x: 70 + R() * (W - 140), evac: mode === 'evac', ty: 180 + R() * (H * .5) });
   for (let i = 0; i < 2 + Math.ceil(s / 2); i++) tl.push({ t: 4 + R() * (len - 8), type: 'cache', x: 60 + R() * (W - 120) });
   const pa = partAt(L, tier);
   if (pa && !hasPart(pa.ship, pa.idx)) tl.push({ t: len * (.3 + R() * .4), type: 'salvage', x: 90 + R() * (W - 180), part: pa });
   tl.sort((a, b) => a.t - b.t); widen(tl);
-  return { L, s, idx, len, tl, major: idx === LEVELS_PER - 1, survivors: nSurv, rush: false, tier, part: pa,
+  return { L, s, idx, len, tl, major: idx === LEVELS_PER - 1, survivors: nSurv, rush: false, tier, part: pa, mode,
     label: `${s + 1}-${idx + 1}${tier ? ' ' + TIERS[tier].name : ''}`, name: idx === LEVELS_PER - 1 ? `Boss: ${SECTORS[s].boss}` : SECTORS[s].name };
 }
 
@@ -493,7 +508,7 @@ let LV = null, run = null, P = null, ST = null, TM = TIERS[0], TH = { hp: 1, fir
 let enemies = [], pb = [], eb = [], pickups = [], parts = [], texts = [], clouds = [];
 let levelT = 0, gameT = 0, bgScroll = 0, shake = 0, flash = 0, boss = null, banner = null;
 let curSector = 0;
-const SCROLL = 70;
+let SCROLL = 70; // world scroll speed; a Defend mission brings it to a halt while you hold the line
 const keys = {};
 let pointer = null;
 
@@ -506,10 +521,13 @@ function newRun(level) {
     usedBomb: false, combo: 0, comboT: 0, bestCombo: 0, lastKill: -9, endT: 0, failT: 0, failed: false, rescueStars: 0, done: false,
     found: [], newShip: null };
   enemies = []; pb = []; eb = []; pickups = []; parts = []; texts = [];
-  levelT = 0; boss = null; flash = 0; shake = 0; camX = 0; strikes = []; cine = null;
+  levelT = 0; boss = null; flash = 0; shake = 0; camX = 0; strikes = []; cine = null; SCROLL = 70; allies = [];
+  run.lost = 0; run.objFail = null;
+  if (LV.mode === 'escort') for (let i = 0; i < 3; i++) allies.push({ kind: 'truck', x: W / 2 + (i - 1) * 70, y: H * .64 + Math.abs(i - 1) * 26 + 34, hw: 22, hh: 34, hp: 200, max: 200, ph: i * 2.1, i });
   LV.tl = LV.tl.slice();
   seedBg();
   banner = { a: LV.rush ? 'STAR RUSH' : `MISSION ${LV.label}`, b: LV.rush ? 'Grab everything that glitters' : LV.name, t: 3 };
+  if (LV.mode) banner = { a: MODES[LV.mode].name, b: MODES[LV.mode].brief, t: 3.4 };
   state = 'play'; paused = false; showScreen(null); SND.duck(false);
   SND.music(LV.rush ? 'rush' : 'mission', LV.rush ? 900 + LV.s : LV.L * 7919 + 3, [0, -2, 2, -1, 1, -3][LV.s]); // Bb, Ab, C, A, B, G
   SND.takeoff(); SND.ambience(BIOMES[LV.s] === 'storm' ? 'rain' : null);
@@ -523,6 +541,7 @@ function newRun(level) {
 const BIOMES = ['isles', 'peaks', 'seas', 'sprawl', 'storm', 'core'];
 const LX = .6, LY = .8; // direction the light travels (towards the bottom-right)
 const GRADE = [null, 'rgba(255,160,80,.07)', 'rgba(110,70,190,.09)', 'rgba(8,16,50,.17)']; // dawn / day / dusk / night by mission
+let allies = []; // the convoy or camp you're protecting
 let decals = [], booms2 = []; // scorch marks on the ground (scroll with it) and delayed secondary blasts
 let terrain = [], wx = [], nextY = 0, bgT = 0, bgVar = 0, SHADOW = false;
 const shadeCache = new Map();
@@ -1438,6 +1457,7 @@ function drawStrikes() {
 /* ------------------------------ SPAWN ------------------------------ */
 function spawn(ev) {
   if (ev.type === 'stars') { dropStars(ev.x, -20, ev.n, 120); return; }
+  if (ev.type === '_camp') { allies.push({ kind: 'camp', x: ev.x, y: -90, hw: 110, hh: 52, hp: 560, max: 560, hold: null }); return; }
   const d = ET[ev.type], s = LV.s, hpm = (1 + LV.L * .8 + s * .1) * TM.hp * TH.hp;
   const e = { type: ev.type, x: ev.x, y: ev.y ?? -40, x0: ev.x, hp: d.hp * hpm, maxHp: d.hp * hpm, r: d.r, mv: ev.mv || d.mv,
     t: 0, fireRate: d.fr ? d.fr / ((1 + s * .24) * DIFFS[save.diff].fire * TM.fire * TH.fire) : 0, counted: !d.neutral && !d.nocount && ev.counted !== false,
@@ -1445,6 +1465,8 @@ function spawn(ev) {
     amp: ev.amp || 120, dir: ev.dir || 1, ty: ev.ty || 200, ang: Math.PI / 2, flash: 0, vx: ev.vx || 0, vy: ev.vy || 0, prog: 0,
     spawnT: ev.type === 'hive' ? 1.5 : 2.5, arm: -1, aiming: 0, burst: 0, burstT: 0, bay: 0, part: ev.part, loyal: !!ev.loyal };
   if (ev.type === 'mini' || ev.type === 'mine' || ev.type === 'splitter') e.x = e.x0 = clamp(e.x, XL + 30, XR - 30);
+  if (LV.mode === 'escort' || LV.mode === 'defend') e.ally = !!ev.tgt || Math.random() < .35; // some of them go for the people you're protecting
+  if (ev.evac) { e.evac = 1; e.ty = ev.ty; e.life = 13; e.life0 = 13; }
   e.fire = e.fireRate ? e.fireRate * (.4 + Math.random() * .6) : 0;
   if (e.type === 'bomber') { e.x = e.dir > 0 ? XL - 60 : XR + 60; }
   // armoured elites: tougher, faster-firing, worth double
@@ -1506,6 +1528,129 @@ function gainPower(k) {
   texts.push({ x: P.x, y: P.y - 40, s: d.name, c: d.c, t: 1.1, sz: 17 }); buzz(25, .3);
   run.powers = (run.powers || 0) + 1;
 }
+function hurtAlly(a, d) {
+  if (a.dead || a.safe || run.endT > 0) return;
+  a.hp -= d * (a.kind === 'camp' ? .5 : .5) * DIFFS[save.diff].dmg; a.flash = .1; sparks(a.x + rand(-a.hw, a.hw) * .5, a.y + rand(-a.hh, a.hh) * .5, '#ffb070', 3);
+  if (a.hp <= 0) {
+    a.dead = true; boom(a.x, a.y, a.kind === 'camp' ? 60 : 30); scorch(a.x, a.y, a.kind === 'camp' ? 90 : 40); shake = Math.max(shake, 8); SND.bigBoom(sndPan(a.x));
+    texts.push({ x: a.x, y: a.y - 40, s: a.kind === 'camp' ? 'THE CAMP HAS FALLEN' : 'CONVOY TRUCK LOST', c: '#ff5a4f', t: 1.6, sz: 16 });
+    if (a.kind === 'camp' || allies.every(o => o.dead)) failObjective(a.kind === 'camp' ? 'The camp was overrun.' : 'The whole convoy was destroyed.');
+  }
+}
+function failObjective(why) {
+  if (run.failT > 0 || run.done || run.endT > 0) return;
+  run.objFail = why; run.failed = true; run.failT = 2.2; banner = { a: 'OBJECTIVE FAILED', b: why, t: 2.4, warn: true }; SND.warn();
+}
+function updAllies(dt) {
+  for (const a of allies) {
+    if (a.flash > 0) a.flash -= dt;
+    if (!a.dead && !a.safe) for (const e of enemies) // kamikaze drones that reach the convoy/camp
+      if (!e.dead && e.ally && e.type === 'diver' && Math.abs(e.x - a.x) < a.hw + e.r * .6 && Math.abs(e.y - a.y) < a.hh + e.r * .6) {
+        e.dead = true; boom(e.x, e.y, e.r); hurtAlly(a, 16); if (a.dead) break;
+      }
+    if (a.kind === 'truck') { // they drive up the road at the scroll speed, weaving round potholes
+      a.x += Math.sin(gameT * .5 + a.ph) * 14 * dt;
+      if (!a.dead && run.endT > 0) a.y -= 160 * dt;
+      if (a.dead) a.y += SCROLL * dt;
+      if (!a.dead && Math.random() < dt * 8) parts.push({ kind: 'smoke', x: a.x + rand(-6, 6), y: a.y + a.hh, vx: rand(-6, 6), vy: SCROLL * .6, t: .6, max: .6, sz: rand(4, 7), grow: 10, drag: .97 });
+    } else if (a.kind === 'camp') {
+      const holdY = H * .6;
+      if (a.hold == null && a.y >= holdY) { a.hold = 30; banner = { a: 'HOLD THE LINE', b: 'Airlift inbound in 30 seconds', t: 2.6, warn: true }; SND.warn(); }
+      if (a.hold > 0 && !a.dead) {
+        a.hold -= dt; SCROLL += (0 - SCROLL) * Math.min(1, dt * 1.6);
+        if (a.hold <= 0) {
+          const v = Math.round((120 + LV.L * 20) * DIFFS[save.diff].stars * TM.stars * (a.hp / a.max + .5));
+          run.stars += v; run.rescueStars += v; SND.rescue(); a.safe = true;
+          banner = { a: 'AIRLIFT COMPLETE', b: `Camp evacuated · +${v}★`, t: 2.4 };
+          for (let i = 0; i < 8; i++) sparks(a.x + rand(-a.hw, a.hw), a.y + rand(-a.hh, a.hh), '#4cdf8a', 3);
+        }
+      } else SCROLL += (70 - SCROLL) * Math.min(1, dt * 1.2);
+      a.y += SCROLL * dt;
+    }
+  }
+  allies = allies.filter(a => a.y < H + 140);
+  if (!allies.some(a => a.kind === 'camp')) SCROLL += (70 - SCROLL) * Math.min(1, dt * 1.2);
+  if (Math.abs(SCROLL - 70) < .05) SCROLL = 70;
+}
+function drawAllies() {
+  for (const a of allies) {
+    ctx.save(); ctx.translate(a.x, a.y);
+    if (a.kind === 'truck') {
+      if (a.dead) { ctx.fillStyle = 'rgba(20,14,10,.8)'; ctx.fillRect(-a.hw, -a.hh, a.hw * 2, a.hh * 2); ctx.restore(); continue; }
+      if (BIOMES[curSector] === 'isles' || BIOMES[curSector] === 'seas') { // over water the convoy is a string of landing craft
+        ctx.strokeStyle = 'rgba(235,245,255,.4)'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(-a.hw + 2, a.hh - 2); ctx.lineTo(-a.hw - 16, a.hh + 46); ctx.moveTo(a.hw - 2, a.hh - 2); ctx.lineTo(a.hw + 16, a.hh + 46); ctx.stroke();
+        ctx.fillStyle = 'rgba(235,245,255,.18)'; ctx.fillRect(-a.hw + 4, a.hh, a.hw * 2 - 8, 30);
+        ctx.fillStyle = a.flash > 0 ? '#fff' : '#7d8794'; ctx.beginPath(); ctx.moveTo(0, -a.hh - 8); ctx.quadraticCurveTo(a.hw + 4, -a.hh + 14, a.hw, a.hh); ctx.lineTo(-a.hw, a.hh); ctx.quadraticCurveTo(-a.hw - 4, -a.hh + 14, 0, -a.hh - 8); ctx.fill();
+        ctx.fillStyle = '#5c6570'; ctx.fillRect(-a.hw + 5, -a.hh + 12, a.hw * 2 - 10, a.hh * 2 - 18);
+        ctx.fillStyle = '#c9b48a'; for (let r = 0; r < 3; r++) for (let c = 0; c < 2; c++) { ctx.beginPath(); ctx.arc(-6 + c * 12, -a.hh + 22 + r * 14, 4, 0, 7); ctx.fill(); }
+        ctx.fillStyle = '#4cdf8a'; ctx.fillRect(-a.hw + 2, a.hh - 10, a.hw * 2 - 4, 4);
+        ctx.restore(); continue;
+      }
+      ctx.fillStyle = 'rgba(0,0,0,.3)'; ctx.fillRect(-a.hw + 6, -a.hh + 8, a.hw * 2, a.hh * 2);
+      ctx.fillStyle = '#2b3340'; ctx.fillRect(-a.hw - 3, -a.hh + 6, 6, 18); ctx.fillRect(a.hw - 3, -a.hh + 6, 6, 18); ctx.fillRect(-a.hw - 3, a.hh - 24, 6, 18); ctx.fillRect(a.hw - 3, a.hh - 24, 6, 18);
+      ctx.fillStyle = a.flash > 0 ? '#fff' : '#c9b48a'; ctx.fillRect(-a.hw, -a.hh + 16, a.hw * 2, a.hh * 2 - 16);
+      ctx.fillStyle = a.flash > 0 ? '#fff' : '#8f7d58'; ctx.fillRect(-a.hw + 3, -a.hh, a.hw * 2 - 6, 18);
+      ctx.fillStyle = '#9fd6ff'; ctx.fillRect(-a.hw + 6, -a.hh + 3, a.hw * 2 - 12, 5);
+      ctx.fillStyle = '#4cdf8a'; ctx.fillRect(-4, -a.hh + 26, 8, 22); ctx.fillRect(-11, -a.hh + 33, 22, 8);
+    } else {
+      if (a.dead) { ctx.restore(); continue; }
+      ctx.fillStyle = 'rgba(0,0,0,.25)'; ctx.beginPath(); ctx.ellipse(8, 10, a.hw + 8, a.hh + 8, 0, 0, 7); ctx.fill();
+      ctx.fillStyle = '#5b4a36'; ctx.beginPath(); ctx.ellipse(0, 0, a.hw + 6, a.hh + 6, 0, 0, 7); ctx.fill(); // sandbag ring
+      ctx.strokeStyle = '#8a7556'; ctx.lineWidth = 6; ctx.setLineDash([10, 5]); ctx.beginPath(); ctx.ellipse(0, 0, a.hw + 4, a.hh + 4, 0, 0, 7); ctx.stroke(); ctx.setLineDash([]);
+      const tents = [[-70, -16], [-24, -26], [24, -20], [70, -10], [-50, 22], [0, 20], [50, 24]];
+      for (const [tx, ty] of tents) {
+        ctx.fillStyle = a.flash > 0 ? '#fff' : '#d8cfb4'; ctx.beginPath(); ctx.moveTo(tx - 15, ty + 10); ctx.lineTo(tx, ty - 12); ctx.lineTo(tx + 15, ty + 10); ctx.closePath(); ctx.fill();
+        ctx.fillStyle = '#a89c7c'; ctx.beginPath(); ctx.moveTo(tx, ty - 12); ctx.lineTo(tx + 15, ty + 10); ctx.lineTo(tx + 3, ty + 10); ctx.closePath(); ctx.fill();
+      }
+      ctx.fillStyle = '#4cdf8a'; ctx.fillRect(-3, -a.hh - 30, 3, 30); ctx.fillRect(0, -a.hh - 30, 18, 11); // flag
+      ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .5 + .2 * Math.sin(gameT * 9);
+      ctx.drawImage(SPR.fire, -10, 30, 20, 20); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; // campfire
+    }
+    ctx.restore();
+  }
+}
+function drawObjective() {
+  if (!LV.mode || LV.rush) return;
+  const M = MODES[LV.mode]; let txt = null, k = null;
+  if (LV.mode === 'escort') { const alive = allies.filter(a => !a.dead); txt = `CONVOY ${alive.length}/3`; k = allies.reduce((s, a) => s + Math.max(0, a.hp), 0) / 600; }
+  else if (LV.mode === 'defend') { const c = allies.find(a => a.kind === 'camp'); if (c && !c.dead) { txt = c.hold == null ? 'CAMP INBOUND' : c.hold > 0 ? `HOLD ${Math.ceil(c.hold)}s` : 'CAMP SAFE'; k = c.hp / c.max; } }
+  else if (LV.mode === 'evac') { const need = Math.ceil(LV.survivors / 2); txt = `EVAC ${run.rescued}/${need} needed${run.lost ? ` · ${run.lost} lost` : ''}`; }
+  if (!txt) return;
+  const w = 190, x = W / 2 - w / 2, y = 92;
+  panel(x, y, w, k == null ? 24 : 32, 7);
+  ctx.fillStyle = M.c; ctx.font = '800 11px Orbitron, sans-serif'; ctx.textAlign = 'center'; ctx.fillText(txt, W / 2, y + 16);
+  if (k != null) { ctx.fillStyle = 'rgba(255,255,255,.12)'; ctx.fillRect(x + 12, y + 22, w - 24, 4); ctx.fillStyle = k > .35 ? M.c : '#ff5a4f'; ctx.fillRect(x + 12, y + 22, (w - 24) * clamp(k, 0, 1), 4); }
+}
+// night: everything dark except the searchlight ahead of the jet, muzzle-glow on the enemy and fire
+let nightCv = null;
+function drawNight() {
+  if (!nightCv) { nightCv = document.createElement('canvas'); }
+  if (nightCv.width !== cv.width) { nightCv.width = cv.width; nightCv.height = cv.height; }
+  const n = nightCv.getContext('2d'); n.setTransform(K, 0, 0, K, 0, 0);
+  n.globalCompositeOperation = 'source-over'; n.clearRect(0, 0, W, H);
+  n.fillStyle = 'rgba(3,6,18,.8)'; n.fillRect(0, 0, W, H);
+  n.globalCompositeOperation = 'destination-out';
+  const hole = (x, y, r, a) => { if (!(r > 0) || !isFinite(x + y)) return; const g = n.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, `rgba(0,0,0,${a})`); g.addColorStop(1, 'rgba(0,0,0,0)'); n.fillStyle = g; n.beginPath(); n.arc(x, y, r, 0, 7); n.fill(); };
+  const sx = x => x - camX;
+  if (!P.dead) {
+    hole(sx(P.x), P.y, 110, 1);
+    n.save(); n.translate(sx(P.x), P.y - 30); // searchlight cone, swinging a little with the stick
+    n.rotate(clamp(P.vx / 2500, -.25, .25));
+    const g = n.createLinearGradient(0, 0, 0, -460); g.addColorStop(0, 'rgba(0,0,0,.95)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+    n.fillStyle = g; n.beginPath(); n.moveTo(-18, 0); n.lineTo(-150, -460); n.lineTo(150, -460); n.lineTo(18, 0); n.closePath(); n.fill(); n.restore();
+  }
+  for (const e of enemies) if (!e.dead && e.y > -40) hole(sx(e.x), e.y, e.r * (e.boss ? 3 : 2.2), e.boss ? .8 : .55);
+  for (const p of parts) if ((p.kind === 'fire' || p.kind === 'flash') && p.t > 0) hole(sx(p.x), p.y, p.sz * 1.4, .7);
+  for (const a of allies) if (!a.dead) hole(sx(a.x), a.y, a.hw * 1.6, .5);
+  for (const p of pickups) if (p.kind !== 'star' || p.v >= 5) hole(sx(p.x), p.y, 30, .6);
+  for (const o of terrain) if (o.beh === 'tall' && o.y > -60 && o.y < H + 60) { // tower searchlights sweep the ground
+    const a = Math.sin(bgT * .7 + o.x) * 1.2 + Math.PI / 2;
+    n.save(); n.translate(sx(o.x), o.y); n.rotate(a - Math.PI / 2);
+    const g = n.createLinearGradient(0, 0, 0, 260); g.addColorStop(0, 'rgba(0,0,0,.6)'); g.addColorStop(1, 'rgba(0,0,0,0)');
+    n.fillStyle = g; n.beginPath(); n.moveTo(-6, 0); n.lineTo(-60, 260); n.lineTo(60, 260); n.lineTo(6, 0); n.closePath(); n.fill(); n.restore();
+  }
+  ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over'; ctx.drawImage(nightCv, 0, 0); ctx.restore();
+}
 function addPB(x, y, vx, vy, dmg, r, kind) { pb.push({ x, y, vx, vy, dmg, r, kind, pierce: kind === 'b' ? (ST.pierce || 0) : 0, lastHit: null }); }
 const BULLET = {
   drone: { glow: 'rgba(255,84,48,.42)', body: '#ff6a4a', core: '#fff3d0' },
@@ -1518,7 +1663,13 @@ function eShoot(x, y, a, sp) {
   eb.push(b);
   return b;
 }
-const aim = e => Math.atan2(P.y - e.y, P.x - e.x);
+const aim = e => {
+  if (e.ally && !e.boss && allies.length) {
+    let best = null, bd = 1e12; for (const a of allies) if (!a.dead && !a.safe && a.y > 0) { const d = dist2(a, e); if (d < bd) { bd = d; best = a; } }
+    if (best) return Math.atan2(best.y + rand(-best.hh, best.hh) * .6 - e.y, best.x + rand(-best.hw, best.hw) * .6 - e.x);
+  }
+  return Math.atan2(P.y - e.y, P.x - e.x);
+};
 
 function hurtEnemy(e, d, silent) {
   if (e.dead || e.nohit) return;
@@ -1822,8 +1973,11 @@ function update(dt) {
     }
     b.x += b.vx * dt; b.y += b.vy * dt;
     if (b.y > H + 20 || b.y < -40 || b.x < XL - 20 || b.x > XR + 20) b.dead = true;
-    else if (solids.length) { const o = solidAt(b.x, b.y, b.r * .5); if (o && o.beh === 'tall') { b.dead = true; sparks(b.x, b.y, '#ff9a7a', 2); continue; } }
-    else if (!P.dead && (b.x - P.x) ** 2 + (b.y - P.y) ** 2 < (P.r + b.r - 1) ** 2) { b.dead = true; hurtPlayer(10 * (1 + LV.L * .04)); }
+    else {
+      if (solids.length) { const o = solidAt(b.x, b.y, b.r * .5); if (o && o.beh === 'tall') { b.dead = true; sparks(b.x, b.y, '#ff9a7a', 2); continue; } }
+      if (!P.dead && (b.x - P.x) ** 2 + (b.y - P.y) ** 2 < (P.r + b.r - 1) ** 2) { b.dead = true; hurtPlayer(10 * (1 + LV.L * .04)); }
+      else if (allies.length) for (const a of allies) if (!a.dead && Math.abs(b.x - a.x) < a.hw && Math.abs(b.y - a.y) < a.hh) { b.dead = true; hurtAlly(a, 10 * (1 + LV.L * .04)); break; }
+    }
   }
   eb = eb.filter(b => !b.dead);
 
@@ -1870,7 +2024,11 @@ function update(dt) {
 
   if (run.comboT > 0) { run.comboT -= dt; if (run.comboT <= 0) run.combo = 0; }
 
-  if (run.endT > 0) { run.endT -= dt; if (run.endT <= 0 && !run.done) finishLevel(true); }
+  if (allies.length || SCROLL !== 70) updAllies(dt);
+  if (run.endT > 0) { run.endT -= dt; if (run.endT <= 0 && !run.done) {
+    if (LV.mode === 'evac' && run.rescued < Math.ceil(LV.survivors / 2)) { run.objFail = `Only ${run.rescued} of ${LV.survivors} survivors got out.`; finishLevel(false); }
+    else finishLevel(true);
+  } }
   if (run.failT > 0) { run.failT -= dt; if (run.failT <= 0 && !run.done) finishLevel(false); }
 }
 
@@ -2032,6 +2190,12 @@ function updEnemy(e, dt) {
     }
   }
   // rescue
+  if (e.evac && !e.dead) { // evac beacons stop and wait, but not forever
+    if (e.y >= e.ty) { e.y -= SCROLL * dt; e.life -= dt; }
+    if (e.life <= 0) { e.dead = true; run.lost++; texts.push({ x: e.x, y: e.y - 24, s: 'SURVIVOR LOST', c: '#ff5a4f', t: 1.3, sz: 14 });
+      if (LV.survivors - run.lost < Math.ceil(LV.survivors / 2)) failObjective('Too many survivors were left behind.');
+      return; }
+  }
   if (e.type === 'survivor' && !P.dead) {
     const near = Math.hypot(P.x - e.x, P.y - e.y) < 46;
     if (near) {
@@ -2283,6 +2447,12 @@ function drawEnemy(e) {
   }
   rasterBank = bank;
   try { drawEnemy0(e); } finally { rasterFlash = 0; rasterBank = 0; }
+  if (e.evac && !SHADOW && e.life < e.life0) { // flare burning down: how long they can wait
+    const k = clamp(e.life / e.life0, 0, 1), c = k > .5 ? '#4cdf8a' : k > .25 ? '#ffcc33' : '#ff5a4f';
+    ctx.strokeStyle = 'rgba(0,0,0,.45)'; ctx.lineWidth = 6; ctx.beginPath(); ctx.arc(e.x, e.y, 30, 0, 7); ctx.stroke();
+    ctx.strokeStyle = c; ctx.lineWidth = 3.5; ctx.beginPath(); ctx.arc(e.x, e.y, 30, -Math.PI / 2, -Math.PI / 2 + 6.283 * k); ctx.stroke();
+    if (k < .25 && Math.floor(gameT * 6) % 2) { ctx.fillStyle = c; ctx.font = '800 11px Orbitron, sans-serif'; ctx.textAlign = 'center'; ctx.fillText(Math.ceil(e.life) + 's', e.x, e.y - 38); }
+  }
   if (r && !SHADOW && (e.type === 'heli' || e.type === 'lifter')) { // rotor blur over the rendered body
     const ra = gameT * 30 + e.x0, R = e.type === 'lifter' ? r.h * .42 : r.h * .48;
     const hubs = e.type === 'lifter' ? [[0, -r.h * .3], [0, r.h * .3]] : [[0, -r.h * .02]];
@@ -2674,6 +2844,7 @@ function drawHUD() {
     ctx.fillStyle = d.c; ctx.fillRect(px + 22, y0 + 10, 28 * P.pw[k] / d.dur, 5); ctx.globalAlpha = 1;
     px += 64;
   }
+  drawObjective();
   // pause
   panel(W - 52, 12, 40, 40, 9);
   ctx.fillStyle = '#dbe9f7'; ctx.fillRect(W - 40, 22, 5, 20); ctx.fillRect(W - 29, 22, 5, 20);
@@ -2738,6 +2909,7 @@ function render() {
   viewX = camX; ctx.translate(-camX, 0);
   drawBg();
   for (const e of enemies) if (e.ground) drawEnemy(e);
+  if (allies.length) drawAllies();
   if (isStorm()) drawStormHaze();
   drawTowers();
   drawClouds(); drawGrade();
@@ -2854,6 +3026,7 @@ function render() {
     ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(P.x, P.y, Math.max(2, P.r * .43), 0, 7); ctx.fill();
     for (const d of dronePos()) { ctx.fillStyle = '#b48cff'; ctx.beginPath(); ctx.arc(d.x, d.y, 7, 0, 7); ctx.fill(); ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(d.x, d.y, 2.5, 0, 7); ctx.fill(); }
   }
+  if (LV.mode === 'night') drawNight();
   // enemy bullets
   for (const b of eb) {
     const sp = Math.hypot(b.vx, b.vy) || 1, tx = b.vx / sp, ty = b.vy / sp;
@@ -2984,6 +3157,7 @@ function finishLevel(success) {
     if (tier) title = `${TIERS[tier].name} COMPLETE`;
     const cb = Math.round((100 + 40 * L) * DIFFS[save.diff].stars * TM.stars);
     lines.push(['Mission bonus', cb]); total += cb;
+    if (LV.mode === 'escort') { const n = allies.filter(o => !o.dead).length, v = Math.round(n * (60 + 20 * L) * TM.stars); lines.push([`Convoy delivered (${n}/3)`, v]); total += v; }
     const kp = run.total ? run.kills / run.total : 1;
     const all = [kp >= .7, kp >= 1, run.rescued >= LV.survivors, !run.damaged,
       run.baseDropped ? run.baseCollected / run.baseDropped >= .9 : true, !run.usedBomb, run.bestCombo >= 30];
@@ -3020,6 +3194,7 @@ function finishLevel(success) {
   $('resHangar').textContent = run.newShip ? 'Fleet' : 'Hangar';
   { let k = 0; newly.forEach((n, i) => { if (n) setTimeout(() => SND.medal(k), 1300 + k++ * 260); }); }
   $('resQuip').textContent = run.newShip ? `I have finished assembling the ${run.newShip.name}. Select it in the Fleet bay. I would test it myself, but, well.` : unlockedTier ? `Every medal. I have prepared ${TIERS[unlockedTier].name}: same mission, nastier Legion, better pay.` : pick(success ? QUIPS.win : QUIPS.lose);
+  if (run.objFail) $('resQuip').textContent = `${run.objFail} We regroup and go again. I will keep the kettle on.`;
   lastLevel = LV;
   const nextL = !LV.rush && !tier && success && L + 1 < NLEVELS ? L + 1 : null;
   $('resNext').textContent = unlockedTier ? `Fly ${TIERS[unlockedTier].name}` : nextL != null ? 'Next mission' : 'Mission board';
@@ -3096,7 +3271,7 @@ function buildMap() {
       const L = s * LEVELS_PER + i, r = save.lv[L], ok = unlocked(L), bossL = i === LEVELS_PER - 1, top = ok ? topTier(L) : 0;
       const rows = TIERS.map((_, k) => `<div class="pips ${tierOpen(L, k) ? '' : 'dim'}">${Array.from({ length: tierMedalCount(k) }, (_, m) => `<i class="pip ${r?.t[k][m] ? 'on' : ''}"></i>`).join('')}</div>`).join('');
       const salv = TIERS.some((_, k) => { const pa = partAt(L, k); return pa && !hasPart(pa.ship, pa.idx); });
-      html += `<div class="lvl ${ok ? '' : 'locked'} ${r?.done ? 'done' : ''} ${bossL ? 'boss' : ''}" data-l="${ok ? L : ''}">${salv ? '<i class="pd" title="Ship part to find">🔩</i>' : ''}${bestRank(L) ? `<i class="rkb" style="--rc:${RANK_COL[bestRank(L)]}" title="Best rank">${bestRank(L)}</i>` : ''}<b>${s + 1}-${i + 1}</b><small class="mk">${bossL ? 'BOSS · ' : ''}${TIERS[top].name}</small><div class="tiers">${rows}</div></div>`;
+      html += `<div class="lvl ${ok ? '' : 'locked'} ${r?.done ? 'done' : ''} ${bossL ? 'boss' : ''}" data-l="${ok ? L : ''}">${salv ? '<i class="pd" title="Ship part to find">🔩</i>' : ''}${bestRank(L) ? `<i class="rkb" style="--rc:${RANK_COL[bestRank(L)]}" title="Best rank">${bestRank(L)}</i>` : ''}<b>${s + 1}-${i + 1}</b><small class="mk">${bossL ? 'BOSS · ' : MODE_OF[L] ? `<em style="color:${MODES[MODE_OF[L]].c}">${MODES[MODE_OF[L]].name}</em> · ` : ''}${TIERS[top].name}</small><div class="tiers">${rows}</div></div>`;
     }
     html += '</div>';
     const rOk = !!save.lv[s * LEVELS_PER + LEVELS_PER - 1]?.done;
