@@ -485,7 +485,7 @@ function newRun(level) {
   LV = level; ST = stats(); curSector = LV.s; TM = TIERS[LV.tier || 0]; TH = LV.rush ? NO_THREAT : threat(LV.L, LV.tier || 0, ST);
   P = { x: W / 2, y: H - 160, tx: null, ty: null, vx: 0, r: ST.hitbox, hp: ST.maxHp, shield: ST.shield, shDelay: 0, inv: 1.5,
     bar: ST.barrier > 0, barT: 0,
-    fireT: 0, wingT: 0, misT: 1, lasT: 3, lasOn: 0, droT: .5, flakT: 1.5, wakeT: 0, rev: ST.revives || 0, dead: false, revived: false, pw: { spread: 0, over: 0, mag: 0 } };
+    fireT: 0, wingT: 0, misT: 1, lasT: 3, lasOn: 0, droT: .5, flakT: 1.5, wakeT: 0, rev: ST.revives || 0, dead: false, revived: false, pw: { spread: 0, over: 0, mag: 0 }, abT: 3, dome: 0, cloak: 0 };
   run = { stars: 0, baseCollected: 0, baseDropped: 0, kills: 0, total: 0, rescued: 0, damaged: false, bombs: ST.bombs,
     usedBomb: false, combo: 0, comboT: 0, bestCombo: 0, lastKill: -9, endT: 0, failT: 0, failed: false, rescueStars: 0, done: false,
     found: [], newShip: null };
@@ -1590,6 +1590,62 @@ function hurtPlayer(d) {
 }
 
 function useAbility() { if (typeof shipAbility === 'function') shipAbility(); }
+// ---- ship abilities: one per airframe on a cooldown. X / LB on a pad, E or Shift on keys, the ring button on touch.
+const ABIL = {
+  ember:     { name: 'AFTERBURN VOLLEY', cd: 16, c: '#29b6f6', desc: 'Four seconds of overdriven guns.' },
+  kestrel:   { name: 'DASH',             cd: 5,  c: '#7fe05a', desc: 'Snap sideways, untouchable for an instant.' },
+  lifeline:  { name: 'TRACTOR BEAM',     cd: 18, c: '#4cdf8a', desc: 'Hauls in every star and pickup, and patches the hull.' },
+  bulwark:   { name: 'SHIELD DOME',      cd: 18, c: '#ffb347', desc: 'A dome that eats enemy fire for four seconds.' },
+  tempest:   { name: 'SALVO',            cd: 14, c: '#ff5a4f', desc: 'Ten seeking rockets at once.' },
+  aegis:     { name: 'BARRIER PULSE',    cd: 22, c: '#9fb8ff', desc: 'Wipes enemy fire off the screen and restores First Strike.' },
+  stormcrow: { name: 'CHAIN LIGHTNING',  cd: 13, c: '#5fe0ff', desc: 'Lightning leaps between up to eight drones.' },
+  phantom:   { name: 'CLOAK',            cd: 18, c: '#b48cff', desc: 'Three seconds where nothing can touch you.' },
+  sovereign: { name: 'COMMAND STRIKE',   cd: 24, c: '#ffcc33', desc: 'Calls an airstrike across the whole screen.' },
+};
+const abilOf = () => ABIL[save.ship] || ABIL.ember;
+function shipAbility() {
+  if (state !== 'play' || paused || P.dead || run.endT > 0 || P.abT > 0) return;
+  const A = abilOf(), id = ABIL[save.ship] ? save.ship : 'ember';
+  P.abT = A.cd; run.abils = (run.abils || 0) + 1; buzz(30, .5);
+  texts.push({ x: P.x, y: P.y - 46, s: A.name, c: A.c, t: .9, sz: 15 });
+  parts.push({ ring: true, x: P.x, y: P.y, r: 10, t: .4, c: A.c });
+  switch (id) {
+    case 'ember': P.pw.over = Math.max(P.pw.over, 4); SND.charge(); break;
+    case 'kestrel': {
+      const dir = Math.abs(P.vx) > 40 ? Math.sign(P.vx) : (P.x < (XL + XR) / 2 ? 1 : -1);
+      const nx = clamp(P.x + dir * 170, XL + 24, XR - 24), dx = nx - P.x;
+      for (let i = 0; i < 5; i++) parts.push({ ghost: true, x: P.x + dx * i / 5, y: P.y, vx: 0, vy: 0, t: .2 + i * .05, max: .45 });
+      P.x = nx; if (pointer) pointer.ox += dx; P.inv = Math.max(P.inv, .45); SND.shot(); break;
+    }
+    case 'lifeline':
+      P.pw.mag = Math.max(P.pw.mag, 4); P.hp = Math.min(ST.maxHp, P.hp + ST.maxHp * .15); SND.heal();
+      for (const p of pickups) p.t = Math.max(p.t, .3);
+      break;
+    case 'bulwark': P.dome = 4; SND.shield(); break;
+    case 'tempest': {
+      SND.missile();
+      for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + (i - 4.5) * .22; addPB(P.x, P.y - 10, Math.cos(a) * 260, Math.sin(a) * 260, Math.max(ST.mdmg, ST.dmg * 3), 6, 'm'); }
+      break;
+    }
+    case 'aegis':
+      eb.forEach(b => sparks(b.x, b.y, '#bcd0ff', 1)); eb = []; P.bar = !!ST.barrier || P.bar; P.inv = Math.max(P.inv, .5);
+      parts.push({ ring: true, x: P.x, y: P.y, r: 20, t: .7, c: '#9fb8ff' }); SND.barrier(); flash = .25; break;
+    case 'stormcrow': {
+      const tg = enemies.filter(o => !o.dead && !o.neutral && !o.nohit && o.y > 0 && o.y < H).sort((a, b) => dist2(a, P) - dist2(b, P)).slice(0, 8);
+      let from = P; SND.zap();
+      for (const o of tg) { parts.push({ zap: true, x: from.x, y: from.y, x2: o.x, y2: o.y, t: .3, max: .3 }); hurtEnemy(o, o.boss ? ST.dmg * 12 : ST.dmg * 9, true); from = o; }
+      break;
+    }
+    case 'phantom': P.cloak = 3; P.inv = Math.max(P.inv, 3); break;
+    case 'sovereign': {
+      SND.emp(); shake = 8; flash = .35;
+      const d = 90 * (1 + LV.L * .3);
+      for (const e of enemies) if (!e.neutral && !e.dead && e.y > -20) { hurtEnemy(e, e.boss ? Math.min(d, e.maxHp * .03) : d, true); boom(e.x + rand(-10, 10), e.y + rand(-10, 10), 18); }
+      eb = eb.filter(b => dist2(b, P) > 200 * 200);
+      break;
+    }
+  }
+}
 function useBomb() {
   if (state !== 'play' || paused || run.bombs <= 0 || P.dead || run.endT > 0) return;
   run.bombs--; run.usedBomb = true; flash = .7; shake = 10; SND.emp(); buzz(90, .9);
@@ -1691,6 +1747,9 @@ function update(dt) {
     // camera eases toward the ship: at the world edge it has panned the full PAN
     camX += (clamp((P.x - W / 2) / (W / 2 + PAN - 20), -1, 1) * PAN - camX) * Math.min(1, dt * 5);
     P.inv -= dt;
+    if (P.abT > 0) { P.abT -= dt; if (P.abT <= 0) { texts.push({ x: P.x, y: P.y - 40, s: abilOf().name + ' READY', c: abilOf().c, t: .8, sz: 12 }); } }
+    if (P.cloak > 0) P.cloak -= dt;
+    if (P.dome > 0) { P.dome -= dt; for (const b of eb) if (dist2(b, P) < 96 * 96) { b.dead = true; sparks(b.x, b.y, '#ffcf80', 2); } eb = eb.filter(b => !b.dead); }
     if (P.hp < ST.maxHp * .3 && run.endT <= 0) SND.alarm();
     if (ST.regen && P.hp < ST.maxHp) P.hp = Math.min(ST.maxHp, P.hp + ST.regen * dt);
     P.shDelay -= dt;
@@ -2615,6 +2674,15 @@ function drawHUD() {
   ctx.beginPath(); ctx.arc(bx, by, 32, 0, 7); ctx.stroke();
   ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.font = '900 14px Orbitron, sans-serif'; ctx.fillText('EMP', bx, by + 1);
   ctx.font = '700 13px Orbitron, sans-serif'; ctx.fillStyle = '#ffcc33'; ctx.fillText(`×${run.bombs}`, bx, by + 18);
+  // ability button: fills clockwise as the cooldown runs down
+  { const A = abilOf(), ax = W - 62, ay = H - 162, k = P.abT > 0 ? 1 - P.abT / A.cd : 1, ok = k >= 1;
+    ctx.fillStyle = ok ? 'rgba(20,30,44,.9)' : 'rgba(16,22,32,.8)'; ctx.beginPath(); ctx.arc(ax, ay, 30, 0, 7); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,.12)'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(ax, ay, 27, 0, 7); ctx.stroke();
+    ctx.strokeStyle = A.c; ctx.globalAlpha = ok ? .6 + .4 * Math.sin(gameT * 5) : .8;
+    ctx.beginPath(); ctx.arc(ax, ay, 27, -Math.PI / 2, -Math.PI / 2 + 6.283 * k); ctx.stroke(); ctx.globalAlpha = 1;
+    ctx.fillStyle = ok ? A.c : '#7d8ea3'; ctx.textAlign = 'center'; ctx.font = '800 9px Orbitron, sans-serif';
+    const w = A.name.split(' '); w.forEach((t, i) => ctx.fillText(t, ax, ay + 3 + (i - (w.length - 1) / 2) * 11));
+  }
   // boss bar: name plate plus a segmented hull readout
   if (boss && !boss.dead && boss.y > 0) {
     panel(40, 86, W - 80, 30, 8);
@@ -2752,7 +2820,17 @@ function render() {
     ctx.drawImage(ra.art, -ra.size / 2, -ra.size / 2, ra.size, ra.size);
     ctx.restore(); ctx.filter = 'none';
   }
-  if (!P.dead && (P.inv <= 0 || Math.floor(gameT * 20) % 2 === 0)) {
+  if (!P.dead && P.dome > 0) {
+    const a = Math.min(1, P.dome * 2) * (P.dome < 1 && Math.floor(gameT * 10) % 2 ? .4 : 1);
+    ctx.globalCompositeOperation = 'lighter';
+    const g = ctx.createRadialGradient(P.x, P.y, 40, P.x, P.y, 96);
+    g.addColorStop(0, 'rgba(255,180,70,0)'); g.addColorStop(.85, `rgba(255,180,70,${.16 * a})`); g.addColorStop(1, `rgba(255,214,140,${.5 * a})`);
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(P.x, P.y, 96, 0, 7); ctx.fill();
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.save(); ctx.translate(P.x, P.y); ctx.rotate(gameT * .8); ctx.strokeStyle = `rgba(255,214,140,${.55 * a})`; ctx.lineWidth = 1.5; hex(96); ctx.stroke(); ctx.restore();
+  }
+  if (!P.dead && P.cloak > 0) { ctx.globalAlpha = .3 + .1 * Math.sin(gameT * 20); drawPlayerShip(P.x, P.y, clamp(P.vx / 900, -1, 1)); ctx.globalAlpha = 1; }
+  else if (!P.dead && (P.inv <= 0 || Math.floor(gameT * 20) % 2 === 0)) {
     drawPlayerShip(P.x, P.y, clamp(P.vx / 900, -1, 1));
     if (P.bar) { ctx.save(); ctx.translate(P.x, P.y); ctx.rotate(gameT); ctx.strokeStyle = 'rgba(255,224,138,.8)'; ctx.lineWidth = 2; hex(42); ctx.stroke(); ctx.restore(); }
     if (P.shield > 0) { ctx.strokeStyle = `rgba(63,216,255,${.25 + .35 * P.shield / ST.shield})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(P.x, P.y, 36, 0, 7); ctx.stroke(); }
@@ -2818,6 +2896,10 @@ function render() {
       ctx.globalAlpha = life * .45; ctx.strokeStyle = 'rgba(225,245,255,.8)'; ctx.lineWidth = 1.4;
       ctx.beginPath(); ctx.ellipse(p.x, p.y, p.sz, p.sz * .5, 0, 0, 7); ctx.stroke();
       return;
+    }
+    if (p.ghost) { // Kestrel dash after-image
+      ctx.globalAlpha = life * .5; ctx.fillStyle = '#7fe05a';
+      ctx.beginPath(); ctx.moveTo(p.x, p.y - 30); ctx.lineTo(p.x + 26, p.y + 18); ctx.lineTo(p.x - 26, p.y + 18); ctx.closePath(); ctx.fill(); return;
     }
     if (p.ring) {
       ctx.strokeStyle = p.c; ctx.globalAlpha = Math.max(0, p.t * 2); ctx.lineWidth = p.lw || 3;
@@ -3045,7 +3127,7 @@ function buildFleet() {
       return `<span class="${h ? 'got' : ''}">${h ? '✓' : '🔩'} ${n} <small>${spotLabel(PART_SPOTS[S.id][i])}</small></span>`;
     }).join('')}</div>`;
     return `<div class="ship ${own ? '' : 'locked'} ${sel ? 'sel' : ''}"><img src="${shipIcon(S.id)}" alt="${S.name}">
-      <div class="info"><h4>${S.name}<small>${S.role}</small></h4><p>${own ? S.desc : 'Find all 4 parts in salvage crates on the missions listed below.'}</p><div class="mods">${mods}</div>${parts}</div>
+      <div class="info"><h4>${S.name}<small>${S.role}</small></h4><p>${own ? S.desc : 'Find all 4 parts in salvage crates on the missions listed below.'}</p><div class="mods">${mods}</div><div class="abil" style="--ac:${ABIL[S.id].c}"><b>${ABIL[S.id].name}</b> ${ABIL[S.id].desc} <small>${ABIL[S.id].cd}s</small></div>${parts}</div>
       <button class="btn small" data-ship="${S.id}" ${own && !sel ? '' : 'disabled'}>${sel ? 'Flying' : own ? 'Select' : got + '/4'}</button></div>`;
   }).join('');
 }
@@ -3158,6 +3240,7 @@ audioLabels();
 addEventListener('keydown', e => {
   keys[e.code] = true;
   if (e.code === 'Space' || e.code === 'KeyB') { useBomb(); e.preventDefault(); }
+  if (e.code === 'KeyE' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') { useAbility(); }
   if (e.code === 'Escape' || e.code === 'KeyP') { if (state === 'play') pauseGame(); else if (state === 'pause') $('pResume').click(); }
 });
 addEventListener('keyup', e => { keys[e.code] = false; });
@@ -3167,6 +3250,7 @@ cv.addEventListener('pointerdown', ev => {
   if (state !== 'play') return;
   const p = gp(ev);
   if (Math.hypot(p.x - (W - 62), p.y - (H - 72)) < 44) { useBomb(); return; }
+  if (Math.hypot(p.x - (W - 62), p.y - (H - 162)) < 36) { useAbility(); return; }
   if (p.x > W - 60 && p.y < 60) { pauseGame(); return; }
   pointer = { id: ev.pointerId, ox: P.x - p.x - camX, oy: P.y - p.y, mouse: ev.pointerType === 'mouse' };
   cv.setPointerCapture(ev.pointerId);

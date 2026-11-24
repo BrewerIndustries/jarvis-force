@@ -138,6 +138,9 @@ canvas{position:absolute;inset:0;width:540px;height:960px;display:block}
 .mods{display:flex;flex-wrap:wrap;gap:4px}
 .mods span{font-size:12px;padding:1px 7px;border-radius:6px;background:#132238;color:var(--text)}
 .mods .up{color:var(--green)}
+.abil{margin-top:5px;font-size:12.5px;color:var(--text);opacity:.9;border-left:3px solid var(--ac,#7fe3ff);padding-left:7px}
+.abil b{color:var(--ac,#7fe3ff);font-family:Orbitron,sans-serif;font-size:11px;letter-spacing:.04em;margin-right:4px}
+.abil small{opacity:.6}
 .mods .down{color:var(--red)}
 .parts{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
 .parts span{font-size:12px;padding:1px 7px;border-radius:6px;border:1px dashed #2a4a6a;color:var(--mute)}
