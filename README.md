@@ -83,6 +83,31 @@ supported) and buzz phones that allow `navigator.vibrate`.
   drones during the fight and doesn't add fire on top of the boss's.
   `tools/boss_bot.js` checks this: a dodge bot that reacts every 0.3 s and flies at 260 px/s. On 2026-11-24 it took 0 hits
   in 71 of 72 Mk III / Ace boss runs. The one hit came from the Overseer's wave walls.
+
+  **Multi-part bosses** (`BOSS_PARTS`, `mkBossParts`, `updPart`, `drawPart`). Every boss carries destructible hardware with
+  its own attack, and the core is armoured (takes 25% damage) until all of it is gone. Then CORE EXPOSED: its aimed and
+  ring attacks (fan, shards, radial, bolts) come 18% faster.
+  - Tidebreaker: two wing pods (twin cannon)
+  - Cinder Colossus: two furnace stacks (mortar) and a chin gun
+  - Glacier Maw: two jaws (drop: a short column straight down)
+  - Thornwarden: two vine pods and a seed launcher
+  - Thunderhead: two capacitors (lance: a red aim line locks, then one fast round) and an arc node
+  - Overseer: two guard nodes and two lenses
+
+  Vanguards carry the first two parts of their sector boss. Each part is about 13–20% of the core's HP and shows a health
+  ring and a magenta power cell (the colour of boss fire). The boss plate shows ARMOURED/EXPOSED and one pip per part.
+  The no-hit rule shapes when parts may fire. Parts fire:
+  - in the gap between the core's volleys in a sparse pattern (fan, shards, bolts);
+  - late in a rest.
+
+  Parts never fire during a ring, spiral, cross, wall, rain or cone, or in the rest before or after a pattern that boxes you
+  in (walls, rain, beam, divers, mines, splitters). Their rounds must also have cleared before such a pattern starts. Parts
+  take turns, never two in one beat. Rain and wave walls now get a longer rest (2.3 s and 1.8 s) so their lanes clear first:
+  rain into the flame cone used to trap you. The Overseer's phase-2 beam no longer follows straight after its walls.
+  Bot check 2026-11-24 (`BOT(L, 2, 45, hpFrac, { react: .3, spd: 260, parts: 'live' | 'dead' })`, Mk III / Ace):
+  - Major bosses at 80/40/25% HP, with parts alive and with parts stripped: 142 of 144 runs took 0 hits. The two hits
+    were the Overseer's wave walls, the same rare miss as before.
+  - Vanguards: 72 of 72 runs took 0 hits.
 - **Buildings fly at three altitudes** (`mkTerrain`/`updStructs` in game.js):
   - *Low:* scenery below your altitude. Bullets pass over it.
   - *Legion-held:* red roof roundel. Absorbs your fire and collapses for stars (HP scales with the mission and the threat level).
@@ -157,6 +182,22 @@ Tiny hitbox, slower bullets, a recharging shield that blocks the "no damage" pen
 an auto-revive upgrade, and the stars-kept-on-death rule.
 
 ### Rendering
+**Performance (2026-11-24).** The game had dropped to about 30 fps, and slowed further as the screen filled. Chrome keeps
+canvases smaller than about 256×256 in CPU memory and re-uploads them to the GPU on every `drawImage`, roughly 0.3 ms per
+stamp. Every glow, flame and smoke puff, every sprite shadow and every hit-flash silhouette was one of those. The fixes:
+- `promote()` swaps each baked sprite canvas for an `<img>` of itself once it decodes.
+- The colour grade (haze, sun wash, time-of-day tint, vignette) is baked once per sector and time of day.
+- Storm cloud banks are painted once (plain and lightning-lit) and cross-faded.
+- Bloom runs at quarter resolution inside a GPU-sized buffer.
+- Terrain surface textures fill the face path instead of clip + 8000 px rect.
+- Waves share one gradient.
+
+Headless Chrome on the dev Mac: 60 fps steady in every sector and in boss fights with 80+ bullets (16.7 ms frames), against
+27–40 fps (33–50 ms frames) for build 30.
+
+The ground textures also had a hard vertical seam about 22% across. The horizontal cross-fade in `tools/tile_ground.py` and
+`tools/gen_props.py` ran backwards (a stray `FLIP_LEFT_RIGHT`); it is fixed and every texture rebuilt.
+
 Canvas 2D with a pseudo-3D look; ships, units, bosses, pickups and the ground are rendered art over procedural fallbacks:
 - Terrain prisms (`prism()`) lean away from the screen centre as they scroll past, and walls are shaded from a top-left light.
 - Shadows for terrain, jets and bosses are drawn into one black offscreen layer (`shadowPass()`) at half resolution and
@@ -220,6 +261,8 @@ Canvas 2D with a pseudo-3D look; ships, units, bosses, pickups and the ground ar
 - Each biome adds weather (embers, snow, pollen or data motes), and the world sits under a vignette.
 
 ### Feel and effects (added 2026-11-23)
+- Player tracer rounds were slimmed on 2026-11-24 (glow 7×16, core 2.6×14, was 12×26 / 4.4×22) so your own fire stops
+  burying the screen. Visual size only: hit radius and damage are unchanged.
 - **Hit feel:** a short hit-stop on big kills, boss kills and when you take damage, plus a white silhouette flash on
   rendered sprites (`rasterFlash`) and controller rumble.
 - **Explosions:** big kills set off delayed secondary blasts (`booms2`). Wrecks leave scorch marks (`decals`, capped at 40) that sit on the

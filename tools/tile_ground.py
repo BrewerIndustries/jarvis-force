@@ -30,7 +30,7 @@ def seamless(im, vertical):
         mask = Image.linear_gradient("L").resize((w, b))  # 0 at the top -> 255 at the bottom
     else:
         out = im.crop((0, 0, n - b, h)); head = im.crop((0, 0, b, h)); tail = im.crop((n - b, 0, n, h))
-        mask = Image.linear_gradient("L").rotate(90, expand=True).transpose(Image.FLIP_LEFT_RIGHT).resize((b, h))
+        mask = Image.linear_gradient("L").rotate(90, expand=True).resize((b, h))
     out.paste(Image.composite(head, tail, mask), (0, 0))  # mask 255 -> head, 0 -> tail
     return out
 

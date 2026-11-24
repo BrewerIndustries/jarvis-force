@@ -578,21 +578,32 @@ function softSprite(size, stops) {
   g.fillStyle = rg; g.fillRect(0, 0, size, size);
   return c;
 }
+// Chrome keeps small canvases (under ~256x256) in CPU memory and re-uploads them to the GPU on every
+// drawImage, ~0.3 ms a stamp; hundreds of glow/fire/shadow stamps a frame is what was dragging the game to
+// ~20 fps. Every baked sprite canvas is swapped for an <img> of itself as soon as it decodes (an image stays
+// on the GPU), and the canvas is used only until then.
+function promote(obj, key) {
+  const c = obj[key]; if (!c || !c.toDataURL) return;
+  try { const im = new Image(); im.onload = () => { if (obj[key] === c) obj[key] = im; }; im.src = c.toDataURL(); } catch (e) {}
+}
 // bloom: the bright parts of a frame (muzzle flashes, explosions, engine glow, sun glitter) are
 // copied into a quarter-size buffer with a contrast boost and blur, then added back. It is what makes
 // a flat canvas scene read as lit rather than painted.
+// The buffer canvas is half size so Chrome keeps it on the GPU (a canvas under ~256x256 lives on the CPU,
+// which would turn this copy into a GPU->CPU readback every frame), but only its top-left quarter-res
+// corner is used, so the blur still runs over a quarter of the pixels.
 const BLOOM_W = Math.round(W / 4), BLOOM_H = Math.round(H / 4);
-const bloomCv = document.createElement('canvas'); bloomCv.width = BLOOM_W; bloomCv.height = BLOOM_H;
+const bloomCv = document.createElement('canvas'); bloomCv.width = BLOOM_W * 2; bloomCv.height = BLOOM_H * 2;
 const bloomCtx = bloomCv.getContext('2d');
 let bloomOK = typeof bloomCtx.filter === 'string';
 function drawBloom() {
   if (!bloomOK) return;
-  bloomCtx.globalCompositeOperation = 'copy';
+  bloomCtx.clearRect(0, 0, BLOOM_W + 8, BLOOM_H + 8);
   bloomCtx.filter = 'brightness(1.15) contrast(7) blur(2.5px)';
   try { bloomCtx.drawImage(cv, 0, 0, BLOOM_W, BLOOM_H); } catch (e) { bloomOK = false; return; }
   bloomCtx.filter = 'none';
   ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .14;
-  ctx.drawImage(bloomCv, 0, 0, W, H);
+  ctx.drawImage(bloomCv, 0, 0, BLOOM_W, BLOOM_H, 0, 0, W, H);
   ctx.restore();
 }
 
@@ -601,6 +612,7 @@ const SPR = {
   smoke: softSprite(64, [[0, 'rgba(182,176,168,.72)'], [.45, 'rgba(116,110,104,.4)'], [1, 'rgba(58,54,54,0)']]),
   sun: softSprite(64, [[0, 'rgba(255,246,196,.95)'], [.38, 'rgba(255,206,70,.42)'], [1, 'rgba(255,180,40,0)']]),
 };
+for (const k in SPR) promote(SPR, k);
 
 // Optional rendered sprite art. tools/key_sprites.py keys generated art off its magenta backdrop and
 // writes sprites/<id>.png at 2x; if a file is missing the game silently keeps the procedural art, so
@@ -627,6 +639,7 @@ function loadRaster() {
       const wc = document.createElement('canvas'); wc.width = im.width; wc.height = im.height; // hit-flash silhouette
       const wg = wc.getContext('2d'); wg.drawImage(im, 0, 0); wg.globalCompositeOperation = 'source-in'; wg.fillStyle = '#fff'; wg.fillRect(0, 0, wc.width, wc.height);
       RASTER[id] = { img: im, shadow: c, white: wc, h: hpx / 2 };
+      promote(RASTER[id], 'shadow'); promote(RASTER[id], 'white');
     };
     im.src = 'sprites/' + id + '.png';
   }
@@ -655,10 +668,10 @@ for (const k of ['jungle', 'rock', 'ice', 'roof']) {
 }
 function paintSurf(k, path, x, y, sc, a, mode) {
   const p = SURF[k]; if (!p || SHADOW) return;
-  ctx.save(); path(); ctx.clip();
+  ctx.save(); path(); // fill the face itself: a clip + huge rect cost a full-screen blend per face
   try { p.setTransform(new DOMMatrix([sc, 0, 0, sc, x, y])); } catch (e) {}
   ctx.globalAlpha = a; ctx.globalCompositeOperation = mode || 'source-over';
-  ctx.fillStyle = p; ctx.fillRect(-4000, -4000, 8000, 8000); // clipped to the face
+  ctx.fillStyle = p; ctx.fill();
   ctx.restore();
 }
 function drawGroundTex(B) {
@@ -1251,21 +1264,28 @@ function drawGround(S) {
 // rolling swell for the northern sea: each row is a wave face, lit at the crest and dark in the trough
 // Over the rendered sea the wave faces are drawn translucent so the ice and slush show through; crests,
 // whitecaps and foam stay at full strength, so the swell reads exactly as before.
+let waveGrad = null;
 function drawWaves(S, tex) {
   const A = 5 + bgVar * 3.2, sp = 46, sc = bgScroll * 1.12, off = sc % sp, base = Math.floor(sc / sp);
   const hi = shade(S.sea[0], 1.3), lo = shade(S.sea[1], .85);
+  if (!waveGrad || waveGrad.k !== S.sea[0] + A) {
+    const g = ctx.createLinearGradient(0, -A * 1.3, 0, sp); g.addColorStop(0, hi); g.addColorStop(.35, S.sea[0]); g.addColorStop(1, lo);
+    waveGrad = g; waveGrad.k = S.sea[0] + A;
+  }
   for (let r = -1; r < H / sp + 2; r++) {
     // each row keeps the same wave train but its own height and phase, so the sea is not a stripe pattern
     const row = base - r, hv = hash(row, 11), amp = A * (.72 + hv * .56), y0 = r * sp + off - sp + (hv - .5) * sp * .55, ph = row * 1.7 + hv * 1.4;
     const yAt = x => y0 + amp * Math.sin(x * .021 + bgT * 1.3 + ph) + amp * .5 * Math.sin(x * .049 - bgT * .8 + ph * 2);
     const x0 = XL - 24, x1 = XR + 24;
-    ctx.beginPath(); ctx.moveTo(x0, yAt(x0));
-    for (let x = x0 + 12; x <= x1; x += 12) ctx.lineTo(x, yAt(x));
-    ctx.lineTo(x1, y0 + sp + amp * 2.4); ctx.lineTo(x0, y0 + sp + amp * 2.4); ctx.closePath();
-    const g = ctx.createLinearGradient(0, y0 - amp, 0, y0 + sp); g.addColorStop(0, hi); g.addColorStop(.35, S.sea[0]); g.addColorStop(1, lo);
-    ctx.fillStyle = g; if (tex) ctx.globalAlpha = .42; ctx.fill(); ctx.globalAlpha = 1;
+    // one shared vertical gradient per frame (the rows are translated onto it), not one per row
+    ctx.save(); ctx.translate(0, y0);
+    ctx.beginPath(); ctx.moveTo(x0, yAt(x0) - y0);
+    for (let x = x0 + 16; x <= x1; x += 16) ctx.lineTo(x, yAt(x) - y0);
+    ctx.lineTo(x1, sp * .9 + amp * 1.4); ctx.lineTo(x0, sp * .9 + amp * 1.4); ctx.closePath();
+    ctx.fillStyle = waveGrad; if (tex) ctx.globalAlpha = .42; ctx.fill(); ctx.globalAlpha = 1;
+    ctx.restore();
     ctx.strokeStyle = `rgba(235,248,255,${.16 + bgVar * .06 + hv * .05})`; ctx.lineWidth = 1.3 + bgVar * .5;
-    ctx.beginPath(); for (let x = x0; x <= x1; x += 12) { const y = yAt(x); x > x0 ? ctx.lineTo(x, y) : ctx.moveTo(x, y); } ctx.stroke();
+    ctx.beginPath(); for (let x = x0; x <= x1; x += 16) { const y = yAt(x); x > x0 ? ctx.lineTo(x, y) : ctx.moveTo(x, y); } ctx.stroke();
     if (bgVar >= 1) { // whitecaps on the highest crests
       ctx.fillStyle = 'rgba(255,255,255,.55)';
       for (let x = x0 + 6; x < x1; x += 24) { const d = Math.sin(x * .021 + bgT * 1.3 + ph); if (d < -.85) { ctx.beginPath(); ctx.arc(x, yAt(x) - 1, 1.5 + bgVar * .6, 0, 7); ctx.fill(); } }
@@ -1361,19 +1381,28 @@ function drawWeather() {
 // bottom stays crisp. Per sector so the moor is grey and the peaks are warm dust.
 const HAZE = ['rgba(150,214,232,.20)', 'rgba(255,168,116,.16)', 'rgba(188,224,244,.20)',
               'rgba(168,228,186,.16)', 'rgba(148,160,176,.18)', 'rgba(148,122,226,.15)'];
-let vignette = null;
+// The grade (sky haze, warm-to-cool sun wash, time-of-day tint, vignette) never changes within a mission,
+// so it is baked once per sector + time of day into one screen-sized image: one stamp a frame instead of
+// four full-screen gradient fills.
+const gradeCache = {};
 function drawGrade() {
-  ctx.save(); ctx.translate(viewX, 0);
-  const hz = ctx.createLinearGradient(0, 0, 0, H * .6);
-  hz.addColorStop(0, HAZE[curSector]); hz.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = hz; ctx.fillRect(0, 0, W, H * .6);
-  const sun = ctx.createLinearGradient(0, 0, W, H);
-  sun.addColorStop(0, 'rgba(255,228,176,.075)'); sun.addColorStop(.5, 'rgba(255,255,255,0)'); sun.addColorStop(1, 'rgba(38,86,150,.085)');
-  ctx.fillStyle = sun; ctx.fillRect(0, 0, W, H);
-  if (GRADE[bgVar]) { ctx.fillStyle = GRADE[bgVar]; ctx.fillRect(0, 0, W, H); }
-  if (!vignette) { vignette = ctx.createRadialGradient(W * .42, H * .4, H * .25, W / 2, H / 2, H * .75); vignette.addColorStop(0, 'rgba(0,0,0,0)'); vignette.addColorStop(1, 'rgba(0,0,0,.42)'); }
-  ctx.fillStyle = vignette; ctx.fillRect(0, 0, W, H);
-  ctx.restore();
+  const key = curSector + ':' + bgVar + ':' + K;
+  let g = gradeCache[key];
+  if (!g) {
+    const c = document.createElement('canvas'); c.width = Math.ceil(W * K); c.height = Math.ceil(H * K);
+    const x = c.getContext('2d'); x.scale(K, K);
+    const hz = x.createLinearGradient(0, 0, 0, H * .6);
+    hz.addColorStop(0, HAZE[curSector]); hz.addColorStop(1, 'rgba(0,0,0,0)');
+    x.fillStyle = hz; x.fillRect(0, 0, W, H * .6);
+    const sun = x.createLinearGradient(0, 0, W, H);
+    sun.addColorStop(0, 'rgba(255,228,176,.075)'); sun.addColorStop(.5, 'rgba(255,255,255,0)'); sun.addColorStop(1, 'rgba(38,86,150,.085)');
+    x.fillStyle = sun; x.fillRect(0, 0, W, H);
+    if (GRADE[bgVar]) { x.fillStyle = GRADE[bgVar]; x.fillRect(0, 0, W, H); }
+    const v = x.createRadialGradient(W * .42, H * .4, H * .25, W / 2, H / 2, H * .75); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,.42)');
+    x.fillStyle = v; x.fillRect(0, 0, W, H);
+    g = gradeCache[key] = { c }; promote(g, 'c');
+  }
+  ctx.drawImage(g.c, viewX, 0, W, H);
 }
 
 /* ------------------------------ STORM ------------------------------ */
@@ -1446,19 +1475,33 @@ function drawStormHaze() { // rain haze over the ground; lightning burns through
     ctx.beginPath(); ctx.arc(e.x, e.y, 14 + k * 26, 0, 7); ctx.stroke();
   }
 }
+// Each cloud bank is ~26 radial gradients. They are painted once when the bank forms (plain, and fully
+// lightning-lit) and stamped after that; a strike cross-fades the lit copy in.
+function paintBank(b, L) {
+  let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+  for (const [px, py, pr] of b.puffs) { x0 = Math.min(x0, px - pr); x1 = Math.max(x1, px + pr); y0 = Math.min(y0, py - pr); y1 = Math.max(y1, py + pr); }
+  const c = document.createElement('canvas'), k = Math.min(1.5, K);
+  c.width = Math.ceil((x1 - x0) * k); c.height = Math.ceil((y1 - y0) * k);
+  const g = c.getContext('2d'); g.scale(k, k); g.translate(-x0, -y0);
+  for (const [px, py, pr] of b.puffs) {
+    const r = g.createRadialGradient(px, py, pr * .2, px, py, pr);
+    r.addColorStop(0, `rgba(${64 + L * 120},${72 + L * 120},${86 + L * 120},.96)`); r.addColorStop(.7, 'rgba(52,60,74,.9)'); r.addColorStop(1, 'rgba(52,60,74,0)');
+    g.fillStyle = r; g.beginPath(); g.arc(px, py, pr, 0, 7); g.fill();
+  }
+  for (const [px, py, pr] of b.puffs) {
+    const hx = px - pr * .25, hy = py - pr * .3, r = g.createRadialGradient(hx, hy, 0, hx, hy, pr * .65);
+    r.addColorStop(0, `rgba(${150 + L * 90},${160 + L * 90},${176 + L * 79},.35)`); r.addColorStop(1, 'rgba(150,160,176,0)');
+    g.fillStyle = r; g.beginPath(); g.arc(hx, hy, pr * .65, 0, 7); g.fill();
+  }
+  return { c, x0, y0, w: x1 - x0, h: y1 - y0 };
+}
 function drawBanks() {
   const L = storm.light;
   for (const b of banks) {
-    for (const [px, py, pr] of b.puffs) { // soft body
-      const g = ctx.createRadialGradient(b.x + px, b.y + py, pr * .2, b.x + px, b.y + py, pr);
-      g.addColorStop(0, `rgba(${64 + L * 120},${72 + L * 120},${86 + L * 120},.96)`); g.addColorStop(.7, 'rgba(52,60,74,.9)'); g.addColorStop(1, 'rgba(52,60,74,0)');
-      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(b.x + px, b.y + py, pr, 0, 7); ctx.fill();
-    }
-    for (const [px, py, pr] of b.puffs) { // lit tops, toward the light
-      const hx = b.x + px - pr * .25, hy = b.y + py - pr * .3, g = ctx.createRadialGradient(hx, hy, 0, hx, hy, pr * .65);
-      g.addColorStop(0, `rgba(${150 + L * 90},${160 + L * 90},${176 + L * 79},.35)`); g.addColorStop(1, 'rgba(150,160,176,0)');
-      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(hx, hy, pr * .65, 0, 7); ctx.fill();
-    }
+    if (!b.img) { b.img = paintBank(b, 0); b.lit = paintBank(b, 1); promote(b.img, 'c'); promote(b.lit, 'c'); }
+    const { x0, y0, w, h } = b.img;
+    ctx.drawImage(b.img.c, b.x + x0, b.y + y0, w, h);
+    if (L > .02) { ctx.globalAlpha = Math.min(1, L); ctx.drawImage(b.lit.c, b.x + x0, b.y + y0, w, h); ctx.globalAlpha = 1; }
   }
 }
 function drawBolt(pts, w) {
@@ -1515,7 +1558,7 @@ const BOSSES = [
   { shape: 'maw',      pats: ['shards', 'beam', 'radial', 'fan', 'shards', 'minions'] },
   { shape: 'thorn',    pats: ['cross', 'summon', 'wave', 'spiral', 'fan', 'beam'] },
   { shape: 'cell',     pats: ['bolts', 'spiral', 'fan', 'wave', 'bolts', 'minions'] },
-  { shape: 'eye', phases: [['radial', 'fan', 'beam', 'shards'], ['cross', 'summon', 'cone', 'wave', 'beam'], ['spiral', 'shards', 'beam', 'mines', 'rain', 'cone']] },
+  { shape: 'eye', phases: [['radial', 'fan', 'beam', 'shards'], ['cross', 'beam', 'summon', 'cone', 'wave'], ['spiral', 'shards', 'beam', 'mines', 'rain', 'cone']] },
 ];
 const VANGUARD_PATS = [['fan', 'radial', 'wave'], ['cone', 'fan', 'spiral'], ['shards', 'fan', 'radial'], ['cross', 'fan', 'wave'], ['bolts', 'fan', 'rain'], ['beam', 'radial', 'cone']];
 const BOSS_SUB = ['Sovereign of the Drowned Coast', 'Furnace of the Ashen Peaks', 'Jaws of the Frozen Relay',
@@ -1534,10 +1577,94 @@ function spawnBoss() {
     name: major ? S.boss : `${S.boss.split(' ')[0]} VANGUARD`, spin: 0, shape: cfg.shape, phase: 0,
     phases: major && cfg.phases ? cfg.phases : null, pats: major ? (cfg.phases ? cfg.phases[0] : cfg.pats) : VANGUARD_PATS[LV.s], beam: null };
   enemies.push(boss);
+  mkBossParts(boss);
   // entrance: siren, then slow motion, letterbox bars and a name card while the boss descends
   banner = null;
   cine = { t: 0, name: boss.name, sub: major ? BOSS_SUB[LV.s] : `Forward unit of the ${S.boss.toLowerCase().replace(/\b\w/g, c => c.toUpperCase())}`, major };
   SND.warn(); setTimeout(() => SND.bossIntro && SND.bossIntro(major), 650); SND.music('boss', LV.L * 13 + 7, [0, -2, 2, -1, 1, -3][LV.s]);
+}
+
+// ---- multi-part bosses. Every boss carries destructible hardware: wing pods, furnace stacks, jaws, vine pods,
+// capacitors, guard nodes. Each part has its own attack; while any part stands the core is armoured (it takes a
+// quarter damage), so the fight is: strip the parts, then break the exposed core, which fights harder.
+// No-hit rule: parts only fire while the core is resting or running one of its sparse patterns (aimed fans,
+// shards, beams, strikes, summons), never on top of a ring, spiral, wall or rain, and each part attack is a
+// single aimed or straight-down volley that a sidestep clears.
+const PART_LIGHT = new Set(['fan', 'shards', 'bolts']);
+const EXPOSED_FAST = new Set(['fan', 'shards', 'radial', 'bolts']);
+// patterns that box you in (walls, rain, the beam) or chase you (divers, mines, splitters): no part fire in the
+// rest before or after one, since aimed rounds on top of a lane you are forced into is how the no-hit rule breaks
+const PART_BOXED = new Set(['wave', 'rain', 'beam', 'minions', 'mines', 'summon', 'cone']);
+const PART_DUR = { minions: 1.5, mines: 1.5, summon: 1.5, beam: 2.8, rain: 4 };
+const PART_KIND = {
+  twin:  { every: 1.75, label: 'twin cannon' },  // aimed pair
+  lob:   { every: 1.6, label: 'mortar' },        // one big slow aimed shell
+  drop:  { every: 1.5, label: 'drop' },          // a short column straight down
+  snipe: { every: 2.3, label: 'lance' },         // telegraphed line, then one fast round
+};
+const BOSS_PARTS = {
+  manta:    [['twin', -.98, .12, 'WING POD'], ['twin', .98, .12, 'WING POD']],
+  colossus: [['lob', -.86, -.34, 'FURNACE STACK'], ['lob', .86, -.34, 'FURNACE STACK'], ['twin', 0, .92, 'CHIN GUN']],
+  maw:      [['drop', -.72, .8, 'LEFT JAW'], ['drop', .72, .8, 'RIGHT JAW']],
+  thorn:    [['drop', -1, 0, 'VINE POD'], ['drop', 1, 0, 'VINE POD'], ['lob', 0, -.9, 'SEED LAUNCHER']],
+  cell:     [['snipe', -.95, .2, 'CAPACITOR'], ['snipe', .95, .2, 'CAPACITOR'], ['twin', 0, .95, 'ARC NODE']],
+  eye:      [['twin', -1.02, .1, 'GUARD NODE'], ['twin', 1.02, .1, 'GUARD NODE'], ['snipe', -.62, -.82, 'LENS'], ['snipe', .62, -.82, 'LENS']],
+};
+function mkBossParts(b) {
+  let list = BOSS_PARTS[b.shape] || BOSS_PARTS.manta;
+  if (!b.major) list = list.slice(0, 2); // vanguards carry the two flank pieces
+  const each = b.maxHp * (b.major ? (list.length > 3 ? .13 : list.length > 2 ? .15 : .19) : .2);
+  b.parts = [];
+  list.forEach(([kind, ox, oy, name], i) => {
+    const pt = { type: 'bpart', kind, name, host: b, ox: ox * b.r, oy: oy * b.r, x: b.x + ox * b.r, y: b.y + oy * b.r,
+      hp: each, maxHp: each, r: b.major ? 21 : 17, t: 0, flash: 0, counted: false, ground: false, neutral: false, nohit: false,
+      stars: Math.round(b.stars * .07), fire: 1.1 + i * .55, aiming: 0, lockA: Math.PI / 2, ang: Math.PI / 2, mv: 'part' };
+    b.parts.push(pt);
+    enemies.splice(enemies.indexOf(b), 0, pt); // ahead of the core in the list, so shots on the overlap hit the part
+  });
+  b.armored = true; b.exposed = false;
+}
+function updPart(e, dt) {
+  const b = e.host;
+  if (!b || b.dead) { e.dead = true; return; }
+  e.x = b.x + e.ox; e.y = b.y + e.oy;
+  e.ang = Math.atan2(P.y - e.y, P.x - e.x);
+  if (e.aiming > 0) { // lance: the red line holds where it locked, then one fast round down it
+    e.aiming -= dt;
+    if (e.aiming <= 0) { shotTag = 'boss'; const q = eShoot(e.x, e.y, e.lockA, 330); q.r = 6; q.part = 'snipe'; shotTag = null; SND.volley(sndPan(e.x)); }
+    return;
+  }
+  if (b.y < 190 || cine || run.endT > 0 || P.dead) return;
+  // only in the gaps: late in a rest (the last pattern's bullets have cleared the top), or between the core's
+  // own volleys in a sparse pattern, never in the same beat as one
+  const n = b.pats.length, prev = b.pats[(b.pat + n) % n], next = b.pats[(b.pat + 1) % n];
+  const quiet = (b.rest > 0 && (b.restT || 0) > .45 && !PART_BOXED.has(prev) && !PART_BOXED.has(next))
+    || (b.rest <= 0 && PART_LIGHT.has(b.pats[b.pat]) && b.fireT > (b.fi || 0) * .3 && b.fireT < (b.fi || 0) * .65
+        && (!PART_BOXED.has(next) || b.pt < (PART_DUR[b.pats[b.pat]] || 3.2) - 2)); // rounds must clear before a boxing pattern
+  e.fire -= dt;
+  if (e.fire > 0 || !quiet || gameT - (b.partT || -9) < .4) return; // parts take turns, never two in one beat
+  b.partT = gameT;
+  const live = b.parts.filter(q => !q.dead).length, pace = (live <= 1 ? .8 : 1) / Math.sqrt(TM.fire);
+  e.fire = PART_KIND[e.kind].every * pace * (1 + Math.random() * .15);
+  shotTag = 'boss'; const n0 = eb.length;
+  switch (e.kind) {
+    case 'twin': { const a = aim(e); for (const d of [-.075, .075]) eShoot(e.x, e.y + 8, a + d, 180); break; }
+    case 'lob': { const q = eShoot(e.x, e.y, aim(e), 125); q.r = 10; break; }
+    case 'drop': for (let k = 0; k < 3; k++) { const q = eShoot(e.x, e.y + 10 - k * 26, Math.PI / 2, 165); } break;
+    case 'snipe': e.aiming = .8; e.lockA = aim(e); SND.charge && SND.charge(); break;
+  }
+  shotTag = null; for (let i = n0; i < eb.length; i++) eb[i].part = e.kind;
+  if (e.kind !== 'snipe') SND.volley(sndPan(e.x));
+}
+function partDown(e) {
+  const b = e.host; if (!b || b.dead) return;
+  for (let i = 0; i < 3; i++) booms2.push({ x: e.x + rand(-14, 14), y: e.y + rand(-14, 14), r: e.r * rand(.6, .9), t: .08 + i * .12 });
+  shake = Math.max(shake, 7); stopFor(.06); buzz(30, .5);
+  texts.push({ x: e.x, y: e.y - 30, s: e.name + ' DOWN', c: '#ffd34d', t: 1.2, sz: 14 });
+  if (b.parts.every(q => q.dead || q === e)) {
+    b.armored = false; b.exposed = true; b.rest = Math.min(b.rest, .6) || .6; flash = .35; shake = 12; SND.warn();
+    banner = { a: 'CORE EXPOSED', b: 'Armour down. It fights harder now', t: 2.2, warn: true };
+  }
 }
 
 /* ------------------------------ COMBAT ------------------------------ */
@@ -1705,6 +1832,10 @@ function hurtEnemy(e, d, silent) {
   if (e.dead || e.nohit) return;
   if (Math.random() < ST.crit) { d *= 2; if (!silent && Math.random() < .3) texts.push({ x: e.x + rand(-10, 10), y: e.y - 10, s: 'CRIT', c: '#ffd34d', t: .5, sz: 14 }); }
   if (ST.od) d *= 1 + ST.od * Math.min(run.combo, 40) / 40;
+  if (e.boss && e.armored) { // parts still standing: the core shrugs most of it off
+    d *= .25;
+    if (gameT - (e.armT || -9) > 1.6 && !silent) { e.armT = gameT; texts.push({ x: e.x, y: e.y - e.r - 14, s: 'ARMOURED · TAKE OUT THE PARTS', c: '#9fb4c8', t: .9, sz: 12 }); }
+  }
   e.hp -= d; e.flash = .06;
   if (e.hp <= 0) killEnemy(e); else if (!silent) SND.hit();
 }
@@ -1729,6 +1860,7 @@ function killEnemy(e) {
     texts.push({ x: e.x, y: e.y - 24, s: 'SALVAGE CRATE: GRAB THE PART', c: '#7fe3ff', t: 1.4, sz: 14 });
     return;
   }
+  if (e.type === 'bpart') partDown(e);
   if (e.type === 'splitter') SND.split();
   if (e.type === 'splitter') for (let i = -1; i <= 1; i++) spawn({ type: 'mini', x: e.x + i * 12, y: e.y, counted: false, vx: i * 170, vy: -70 });
   if (e.type === 'hive') { save.stats.hives++; shake = 10; }
@@ -2136,6 +2268,7 @@ function updEnemy(e, dt) {
     if (e.hp < e.maxHp * .2 && Math.random() < dt * 9) parts.push({ kind: 'ember', x: e.x + rand(-e.r * .4, e.r * .4), y: e.y, vx: rand(-20, 20), vy: rand(-30, 10), t: .5, max: .5, sz: 1.8, c: '#ffb347', g: 120, drag: .97 });
   }
   if (e.boss) return updBoss(e, dt);
+  if (e.type === 'bpart') return updPart(e, dt);
   switch (e.mv) {
     case 'down': e.y += 160 * dt; e.x += Math.sin(e.t * 3 + e.x0) * 20 * dt; break;
     case 'sine': e.y += 140 * dt; e.x = e.x0 + Math.sin(e.t * 2) * e.amp; break;
@@ -2268,9 +2401,13 @@ function updBoss(e, dt) {
       if (ph === 1) spawn({ type: 'hive', x: W / 2, y: -60, counted: false, loyal: true });
     }
   }
-  const rage = (e.hp < e.maxHp * .5 ? .82 : 1) / Math.sqrt(TM.fire);
+  const rage0 = (e.hp < e.maxHp * .5 ? .82 : 1) / Math.sqrt(TM.fire);
+  // exposed core: its aimed and ring attacks come faster; the dense geometry (spirals, crosses, walls, rain,
+  // the cone) keeps its spacing, since that spacing is what guarantees a way through
+  const rage = rage0 * (e.exposed && EXPOSED_FAST.has(e.pats[e.pat]) ? .82 : 1);
   const pats = e.pats;
-  if (e.rest > 0) { e.rest -= dt; if (e.rest <= 0) { e.pat = (e.pat + 1) % pats.length; e.pt = 0; e.fireT = 0; } return; }
+  if (e.rest > 0) { e.rest -= dt; e.restT = (e.restT || 0) + dt; if (e.rest <= 0) { e.pat = (e.pat + 1) % pats.length; e.pt = 0; e.fireT = 0; } return; }
+  e.restT = 0;
   e.pt += dt; e.fireT -= dt;
   const p = pats[e.pat], s = LV.s;
   if (e.fireT <= 0) {
@@ -2290,13 +2427,13 @@ function updBoss(e, dt) {
         const a = e.pt * 2.6 * e.sdir; eShoot(e.x, e.y, a, 145); eShoot(e.x, e.y, a + Math.PI, 145); break; }
       case 'minions': { e.fireT = 99; for (let i = 0; i < 4; i++) spawn({ type: 'diver', x: XL + 80 + i * (WW - 160) / 3, y: -30, counted: false }); break; }
       case 'rain': { // straight lanes falling from the sky with one drifting open stretch; you can also sit between lanes
-        e.fireT = .5 * rage;
+        e.fireT = .5 * rage0;
         const amp = WW / 2 - 130; if (e.pt < .1) e.gseed = Math.asin(clamp((P.x - W / 2) / amp, -1, 1)); // the gap opens where you are
         const gc = W / 2 + Math.sin(e.pt * .7 + e.gseed) * amp;
         for (let x = XL + 30; x < XR - 10; x += 72) if (Math.abs(x - gc) > 80) eShoot(x, -10, Math.PI / 2, 150);
         break; }
       case 'wave': { // walls with a three-lane gap that only ever shifts one lane
-        e.fireT = .9 * rage; const n = 15;
+        e.fireT = .9 * rage0; const n = 15;
         e.gap = e.gap == null ? 6 : clamp(e.gap + Math.round(rand(-1, 1)), 1, n - 4);
         for (let i = 0; i < n; i++) if (i < e.gap || i > e.gap + 2) eShoot(XL + 20 + i * (WW - 40) / (n - 1), e.y + 30, Math.PI / 2, 120);
         SND.volley(sndPan(e.x)); break; }
@@ -2318,10 +2455,12 @@ function updBoss(e, dt) {
         break; }
       case 'summon': { e.fireT = 99; for (const sx of [-1, 1]) spawn({ type: 'splitter', x: e.x + sx * 120, y: e.y, counted: false }); break; }
     }
-    shotTag = null;
+    shotTag = null; e.fi = e.fireT;
   }
   const dur = { minions: 1.5, mines: 1.5, summon: 1.5, beam: 2.8, rain: 4 }[p] || 3.2;
-  if (e.pt > dur) e.rest = 1.1 * rage;
+  // the exposed core fires faster inside a pattern, but rests as long; walls and rain get a longer rest so their
+  // lanes have cleared the screen before the next pattern can aim at you (rain->cone boxed you in otherwise)
+  if (e.pt > dur) e.rest = (p === 'rain' ? 2.3 : p === 'wave' ? 1.8 : 1.1) * rage0;
   if (!P.dead && (e.x - P.x) ** 2 + (e.y - P.y) ** 2 < (e.r * .7 + P.r) ** 2) hurtPlayer(25);
 }
 
@@ -2413,7 +2552,9 @@ function shipArt(id) {
   const sg = sh.getContext('2d'); sg.drawImage(c, 0, 0);
   sg.globalCompositeOperation = 'source-in'; sg.fillStyle = '#000';
   sg.fillRect(0, 0, sh.width, sh.height);
-  return (shipArtd[id] = { art: c, shadow: sh, size });
+  shipArtd[id] = { art: c, shadow: sh, size };
+  promote(shipArtd[id], 'art'); promote(shipArtd[id], 'shadow');
+  return shipArtd[id];
 }
 function drawPlayerShip(x, y, tilt, scale = 1, id = save.ship) {
   const S = shipById(id), art = shipArt(id), ras = RASTER[id === 'ember' ? 'jet' : 'ship_' + id];
@@ -2470,6 +2611,7 @@ const GROUNDED = new Set(['turret', 'tank', 'hive', 'ground', 'cache', 'salvage'
 const BANKS = new Set(['scout', 'fighter', 'gunship', 'diver', 'bomber', 'sniper', 'splitter', 'mini', 'heli', 'lifter']);
 const JETS = { scout: [[0, -.38, 10]], diver: [[0, -.4, 10]], fighter: [[-.16, -.4, 10], [.16, -.4, 10]], gunship: [[-.2, -.42, 13], [.2, -.42, 13]], bomber: [[-.22, -.42, 14], [.22, -.42, 14]], sniper: [[0, -.4, 9]] };
 function drawEnemy(e) {
+  if (e.type === 'bpart') return; // drawn by its boss, on top of the hull
   rasterFlash = e.flash > 0 ? e.flash : 0;
   const bank = BANKS.has(e.type) && !SHADOW ? clamp((e.bvx || 0) / 700, -.7, .7) : 0;
   const r = RASTER[e.type === 'mini' ? 'splitter' : e.type];
@@ -2695,6 +2837,42 @@ function gear(x, y, r, c, rot) {
 function drawBoss(e) {
   rasterFlash = e.flash > 0 ? e.flash * .6 : 0;
   try { drawBoss0(e); } finally { rasterFlash = 0; }
+  if (e.parts) for (const q of e.parts) if (!q.dead) drawPart(q); // bolted on top of the hull
+  if (e.armored && !SHADOW && e.y > 0) { // faint plate shimmer while the core is armoured
+    ctx.save(); ctx.globalAlpha = .18 + .08 * Math.sin(gameT * 4); ctx.strokeStyle = '#bcd0e4'; ctx.lineWidth = 2; ctx.setLineDash([3, 7]);
+    ctx.beginPath(); ctx.arc(e.x, e.y, e.r * .62, 0, 7); ctx.stroke(); ctx.restore();
+  }
+}
+// a boss part: an armoured housing with its weapon turned toward you and a magenta power cell (the colour of
+// boss fire, so you can tell at a glance which hardware is shooting)
+function drawPart(e) {
+  const r = e.r;
+  ctx.save(); ctx.translate(e.x, e.y);
+  if (SHADOW) { ctx.fillStyle = '#000'; ctx.beginPath(); ctx.arc(0, 0, r + 2, 0, 7); ctx.fill(); ctx.restore(); return; }
+  const hit = e.flash > 0;
+  ctx.save(); ctx.rotate(e.ang - Math.PI / 2); // weapon points down its aim
+  ctx.fillStyle = hit ? '#fff' : '#2b3038';
+  if (e.kind === 'twin') { for (const sx of [-5.5, 5.5]) { ctx.fillRect(sx - 2.5, 0, 5, r + 11); ctx.fillStyle = hit ? '#fff' : '#555c68'; ctx.fillRect(sx - 3, r + 7, 6, 4); ctx.fillStyle = hit ? '#fff' : '#2b3038'; } }
+  else if (e.kind === 'lob') { ctx.fillRect(-7.5, 0, 15, r + 6); ctx.fillStyle = '#1a1d22'; ctx.beginPath(); ctx.ellipse(0, r + 6, 7.5, 3.5, 0, 0, 7); ctx.fill(); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .55 + .25 * Math.sin(gameT * 7); ctx.drawImage(SPR.fire, -8, r - 2, 16, 14); }
+  else if (e.kind === 'snipe') { ctx.fillRect(-2.5, 0, 5, r + 20); ctx.fillStyle = '#555c68'; ctx.fillRect(-4, r + 2, 8, 5); }
+  ctx.restore();
+  if (e.kind === 'drop') { // claws hanging under the housing, opening as it fires
+    const o = 2 + Math.max(0, Math.sin(gameT * 3 + e.ox)) * 3;
+    ctx.fillStyle = hit ? '#fff' : '#2b3038';
+    for (const sx of [-1, 1]) { ctx.beginPath(); ctx.moveTo(sx * 4, r * .4); ctx.lineTo(sx * (8 + o), r + 9); ctx.lineTo(sx * (2 + o * .4), r * .7); ctx.closePath(); ctx.fill(); }
+  }
+  ctx.fillStyle = hit ? '#fff' : bodyGrad(r, '#626b78'); ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.fill();
+  ctx.strokeStyle = 'rgba(16,18,24,.85)'; ctx.lineWidth = 3; ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(0, 0, r - 4, Math.PI * 1.05, Math.PI * 1.7); ctx.stroke();
+  for (let i = 0; i < 6; i++) { const a = i / 6 * 6.283 + .3; ctx.fillStyle = 'rgba(20,22,28,.7)'; ctx.beginPath(); ctx.arc(Math.cos(a) * (r - 4.5), Math.sin(a) * (r - 4.5), 1.4, 0, 7); ctx.fill(); } // rivets
+  const hot = e.kind === 'snipe' && e.aiming > 0 ? 1 : .55 + .3 * Math.sin(gameT * 5 + e.ox);
+  ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = hot * .7; ctx.drawImage(SPR.sun, -r * .75, -r * .75, r * 1.5, r * 1.5); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = e.kind === 'snipe' && e.aiming > 0 ? '#ffe6fb' : '#ff4fd8'; ctx.beginPath(); ctx.arc(0, 0, r * .3, 0, 7); ctx.fill();
+  if (e.hp < e.maxHp) { // health ring
+    ctx.strokeStyle = 'rgba(0,0,0,.5)'; ctx.lineWidth = 3.5; ctx.beginPath(); ctx.arc(0, 0, r + 5, 0, 7); ctx.stroke();
+    ctx.strokeStyle = e.hp / e.maxHp > .35 ? '#ffd34d' : '#ff5a4f'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(0, 0, r + 5, -Math.PI / 2, -Math.PI / 2 + 6.283 * Math.max(0, e.hp / e.maxHp)); ctx.stroke();
+  }
+  ctx.restore();
 }
 function drawBoss0(e) {
   const S = SECTORS[LV.s], col = e.flash > 0 ? '#fff' : bodyGrad(e.r, S.enemy), R = e.r, dark = bodyGrad(e.r * 1.3, '#3d4250');
@@ -2914,6 +3092,12 @@ function drawHUD() {
     ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.fillRect(48 + (W - 96) * k - 2, 103, 2, 9);
     ctx.fillStyle = '#f4f9ff'; ctx.font = '700 11px Orbitron, sans-serif'; ctx.textAlign = 'center';
     ctx.fillText(boss.name, W / 2, 99);
+    if (boss.parts) { // one pip per part; grey plate icon while the core is armoured
+      const n = boss.parts.length;
+      for (let i = 0; i < n; i++) { const q = boss.parts[i], x = W - 60 - (n - 1 - i) * 11; ctx.fillStyle = q.dead ? 'rgba(255,255,255,.15)' : '#ff4fd8'; ctx.beginPath(); ctx.arc(x, 95, 3.5, 0, 7); ctx.fill(); }
+      ctx.font = '800 8px Orbitron, sans-serif'; ctx.textAlign = 'left'; ctx.fillStyle = boss.armored ? '#9fb4c8' : '#ff6a5f';
+      ctx.fillText(boss.armored ? 'ARMOURED' : 'EXPOSED', 50, 98);
+    }
   }
   // laser charge
   if (ST.las) {
@@ -3026,9 +3210,9 @@ function render() {
     }
     else { // tracer: soft aura, hot core, white tip
       const c = b.kind === 'w' ? '150,240,255' : b.kind === 'd' ? '190,150,255' : '190,245,255';
-      ctx.globalAlpha = .45; ctx.fillStyle = `rgb(${c})`; ctx.fillRect(b.x - 6, b.y - 13, 12, 26);
-      ctx.globalAlpha = 1; ctx.fillStyle = `rgb(${c})`; ctx.fillRect(b.x - 2.2, b.y - 11, 4.4, 22);
-      ctx.fillStyle = '#fff'; ctx.fillRect(b.x - 1, b.y - 12, 2, 15);
+      ctx.globalAlpha = .38; ctx.fillStyle = `rgb(${c})`; ctx.fillRect(b.x - 3.5, b.y - 8, 7, 16);
+      ctx.globalAlpha = 1; ctx.fillStyle = `rgb(${c})`; ctx.fillRect(b.x - 1.3, b.y - 7, 2.6, 14);
+      ctx.fillStyle = '#fff'; ctx.fillRect(b.x - .6, b.y - 7.5, 1.2, 9);
     }
   }
   ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;

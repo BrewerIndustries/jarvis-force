@@ -1,7 +1,8 @@
 // No-hit boss check (the owner's rule: every boss beatable without taking a hit).
 // Load in the local preview, then e.g.:  BOT(23, 2, 60, .5, { react: .3, spd: 260 })  -> "L23 hp0.5 hits0 {}"
 // (mission index, tier 2 = Mk III, seconds, boss HP fraction to pin, human-ish reaction 0.3 s at 260 px/s; diff defaults to Ace).
-// Pass { render: N } to draw every Nth frame. Saves and restores the save. Hits are logged by the boss pattern running at the time.
+// Pass { render: N } to draw every Nth frame. Boss parts: { parts: 'live' } pins them alive (they keep firing),
+// { parts: 'dead' } strips them at the start so the exposed core is tested; default leaves them to the bot's gun. Saves and restores the save. Hits are logged by the boss pattern running at the time.
 // Human-ish dodge bot: re-decides only every `react` s (reaction time), moves at `spd` px/s, plans 1s ahead.
 window.BOT = function (L, tier, secs, hpFrac, o = {}) {
   const react = o.react ?? .2, spd = o.spd ?? 320, HZ = o.hz ?? 1, diff = o.diff ?? 2;
@@ -10,7 +11,7 @@ window.BOT = function (L, tier, secs, hpFrac, o = {}) {
   JF.save.diff = diff;
   let hits = 0; const by = {};
   const realHurt = window.hurtPlayer;
-  window.hurtPlayer = d => { if (P.inv > 0) return; hits++; const k = boss ? boss.pats[boss.pat] + (boss.rest > 0 ? '(rest)' : '') : '-'; by[k] = (by[k] || 0) + 1; P.inv = .5; };
+  window.hurtPlayer = d => { if (P.inv > 0) return; hits++; const src = eb.find(b => Math.hypot(b.x - P.x, b.y - P.y) < b.r + P.r + 4); const k = boss ? (boss.pats[boss.pat] || 'start') + (boss.rest > 0 ? '(rest)' : '') + (src && src.part ? '+' + src.part : '') : '-'; by[k] = (by[k] || 0) + 1; P.inv = .5; };
   try {
     JF.startLevel(L, tier);
     state = 'play'; paused = false;
@@ -20,6 +21,8 @@ window.BOT = function (L, tier, secs, hpFrac, o = {}) {
     let mv = [0, 0], nextDec = 0;
     for (let f = 0; f < secs * 60; f++) {
       if (boss) boss.hp = boss.maxHp * hpFrac;
+      if (boss && boss.parts && o.parts === 'live') for (const q of boss.parts) q.hp = q.maxHp;
+      if (boss && boss.parts && o.parts === 'dead' && boss.y >= 190) for (const q of boss.parts) if (!q.dead) killEnemy(q);
       if ((nextDec -= dt) <= 0) {
         nextDec = react;
         const thr = eb.map(b => [b.x, b.y, b.vx, b.vy, b.r + P.r + 1]);
