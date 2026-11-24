@@ -26,7 +26,12 @@ python3 -m http.server 4905
 Then open http://localhost:4905. From the umbrella folder's `.claude/launch.json` it's the `jarvis-force` preview.
 
 **Controls:** mouse, or drag anywhere on touch (the ship moves relative to your finger) · WASD/arrows ·
-Space/B or the EMP button = EMP charge · P/Esc or the ⏸ button = pause. The ship fires automatically. Only the white dot at the centre of the ship takes hits.
+Space/B or the EMP button = EMP charge · E/Shift or the ring button above EMP = ship ability · P/Esc or the ⏸ button = pause.
+The ship fires automatically. Only the white dot at the centre of the ship takes hits.
+
+**Game controllers** (Gamepad API, any standard pad): left stick or d-pad flies; A or RB = EMP; X or LB = ship ability;
+Start = pause. In menus the stick or d-pad moves a gold focus ring and A presses. Hits rumble the pad (dual-rumble where
+supported) and buzz phones that allow `navigator.vibrate`.
 
 ## Content
 
@@ -98,6 +103,46 @@ Space/B or the EMP button = EMP charge · P/Esc or the ⏸ button = pause. The s
   A toast and the tier sheet show the threat multiplier when it's high.
 - **3 difficulties**: Cadet (default, gentle) / Pilot (+30% stars) / Ace (+70% stars).
 - **28 Commendations** (one-time star rewards) and a **daily check-in** streak.
+
+### Mission types (`MODES` / `MODE_OF` in game.js)
+Most non-boss missions carry a twist; 1-1, 2-3 and 4-2 stay plain, and boss missions are never changed.
+The mission board labels each one.
+- **Escort** (1-2, 3-1, 5-2, 6-3): three convoy trucks (landing craft over water) drive up the screen with you. Some
+  drones aim at them, and diver flights dive at them. Lose all three and the mission fails. Every truck delivered pays a bonus.
+- **Defend** (2-2, 4-1, 5-3): a survivor camp rolls in, the world stops scrolling (`SCROLL` eases to 0) and you hold
+  for 30 s against waves sent at the camp, then an airlift pays out. If the camp falls, the mission fails.
+- **Evacuation** (1-3, 3-3, 5-1, 6-2): three extra survivors, each holding position under a flare that burns for 13 s (a
+  ring timer). Rescue at least half or the mission fails. It fails as soon as that can no longer happen.
+- **Night raid** (2-1, 3-2, 4-3, 6-1): the screen is dark apart from your searchlight cone, a pool of light around the
+  jet, muzzle glow on each drone, fire and explosions, and tower searchlights. Enemy bullets are drawn above the
+  darkness, so they are always visible.
+
+  Only fire aimed at the convoy or camp can damage it (bullets aimed at your jet pass over the ground), along with divers that
+  dive into it. Each hit does a flat amount, and convoy/camp health grows 45% per sector, because enemy fire scales by
+  sector and threat level. Tuned with a bot that fights the attackers first: Mk I passes on Pilot and Ace in every sector,
+  with 10–40% left in sectors 5–6.
+
+### Ship abilities (`ABIL` in game.js)
+Each airframe has one ability on a cooldown. The ring button fills as it charges.
+Ember: Afterburn Volley (4 s overdrive) · Kestrel: Dash (170 px sidestep, brief invulnerability) · Lifeline: Tractor
+Beam (pulls in everything, +15% hull) · Bulwark: Shield Dome (eats enemy fire for 4 s) · Tempest: Salvo (10 seeking
+rockets) · Aegis: Barrier Pulse (clears enemy fire, restores First Strike) · Stormcrow: Chain Lightning (8 drones) ·
+Phantom: Cloak (3 s untouchable) · Sovereign: Command Strike (screen-wide airstrike). The Fleet screen lists each ship's ability.
+
+### Power-ups (`POWER`)
+Timed capsules: **S**pread shot (10 s, four extra angled rounds), **O**verdrive (8 s, fire interval ×0.55) and
+**M**agnet surge (12 s, triple pickup range). Every supply cache drops one, elites drop one 30% of the time, big
+drones 6% and ordinary drones 1.2%. Active ones show as chips with draining bars under the hull bar.
+
+### Mission ranks
+Each cleared mission gets a rank, scored out of 100 (`missionRank`):
+- Targets: 25
+- Rescues: 15
+- Hull: 30, minus 10 per hit
+- Chain: 15 (a 30-kill chain scores in full)
+- Speed: 15, based on time past the scripted run. Full marks up to 30 s, zero at 100 s.
+
+S ≥ 90, A ≥ 75, B ≥ 55, otherwise C. The best rank per tier is saved (`save.lv[L].rk`), and the mission board shows the best one in the corner of each tile.
 
 ### Ways to earn stars
 Drone kills · kill-chain multiplier (up to ×3, plus an end-of-mission chain bonus) · survivor rescues ·
@@ -171,6 +216,20 @@ Canvas 2D with a pseudo-3D look; ships, units, bosses, pickups and the ground ar
   The camera eases after the ship, so steering toward an edge pans the view and reveals extra room. Waves are
   stretched across the wider world (`widen()`), and clouds slide slightly faster than the ground for parallax.
 - Each biome adds weather (embers, snow, pollen or data motes), and the world sits under a vignette.
+
+### Feel and effects (added 2026-11-23)
+- **Hit feel:** a short hit-stop on big kills, boss kills and when you take damage, plus a white silhouette flash on
+  rendered sprites (`rasterFlash`) and controller rumble.
+- **Explosions:** big kills set off delayed secondary blasts (`booms2`). Wrecks leave scorch marks (`decals`, capped at 40) that sit on the
+  ground, scroll with it and cool from glowing embers.
+- **Motion:** rendered jets and drones bank with their sideways speed and shade the dipping wing (`rasterBank`).
+  Jet drones show engine flames, helicopters and lifters show rotor blur, and the player's jet throws wingtip vapour on hard turns and lights its afterburner when climbing.
+- **Boss entrances:** letterbox, a red siren strip, a sliding name card, slow motion for a moment and a brass/timpani swell
+  (`SND.bossIntro`).
+- **Bullets:** drone fire is orange-red and boss fire is magenta with a pulsing glow. Both have a dark rim so they read on any ground.
+- **Terrain surfaces:** `tools/gen_props.py` generates four tileable surfaces with the image model (jungle, rock, ice,
+  roof → `sprites/surf_*.jpg`). `paintSurf()` clips each island plateau, peak facet, iceberg top and roof and lays the surface
+  over it, anchored to the object. The shapes, lean and altitude come from the procedural code as before.
 
 ### Audio
 `audio.js` synthesises everything with WebAudio. There are no sound files.

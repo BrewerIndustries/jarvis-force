@@ -523,7 +523,7 @@ function newRun(level) {
   enemies = []; pb = []; eb = []; pickups = []; parts = []; texts = [];
   levelT = 0; boss = null; flash = 0; shake = 0; camX = 0; strikes = []; cine = null; SCROLL = 70; allies = [];
   run.lost = 0; run.objFail = null;
-  if (LV.mode === 'escort') for (let i = 0; i < 3; i++) allies.push({ kind: 'truck', x: W / 2 + (i - 1) * 70, y: H * .64 + Math.abs(i - 1) * 26 + 34, hw: 22, hh: 34, hp: 200, max: 200, ph: i * 2.1, i });
+  if (LV.mode === 'escort') for (let i = 0; i < 3; i++) allies.push({ kind: 'truck', x: W / 2 + (i - 1) * 70, y: H * .64 + Math.abs(i - 1) * 26 + 34, hw: 22, hh: 34, hp: 240 * (1 + LV.s * .45), max: 240 * (1 + LV.s * .45), ph: i * 2.1, i });
   LV.tl = LV.tl.slice();
   seedBg();
   banner = { a: LV.rush ? 'STAR RUSH' : `MISSION ${LV.label}`, b: LV.rush ? 'Grab everything that glitters' : LV.name, t: 3 };
@@ -1483,7 +1483,9 @@ function drawStrikes() {
 /* ------------------------------ SPAWN ------------------------------ */
 function spawn(ev) {
   if (ev.type === 'stars') { dropStars(ev.x, -20, ev.n, 120); return; }
-  if (ev.type === '_camp') { allies.push({ kind: 'camp', x: ev.x, y: -90, hw: 110, hh: 52, hp: 560, max: 560, hold: null }); return; }
+  if (ev.type === '_camp') { // camp HP scales with the sector, as enemy fire does
+    const hp = 720 * (1 + LV.s * .45); allies.push({ kind: 'camp', x: ev.x, y: -90, hw: 110, hh: 52, hp, max: hp, hold: null }); return;
+  }
   const d = ET[ev.type], s = LV.s, hpm = (1 + LV.L * .8 + s * .1) * TM.hp * TH.hp;
   const e = { type: ev.type, x: ev.x, y: ev.y ?? -40, x0: ev.x, hp: d.hp * hpm, maxHp: d.hp * hpm, r: d.r, mv: ev.mv || d.mv,
     t: 0, fireRate: d.fr ? d.fr / ((1 + s * .24) * DIFFS[save.diff].fire * TM.fire * TH.fire) : 0, counted: !d.neutral && !d.nocount && ev.counted !== false,
@@ -1491,7 +1493,7 @@ function spawn(ev) {
     amp: ev.amp || 120, dir: ev.dir || 1, ty: ev.ty || 200, ang: Math.PI / 2, flash: 0, vx: ev.vx || 0, vy: ev.vy || 0, prog: 0,
     spawnT: ev.type === 'hive' ? 1.5 : 2.5, arm: -1, aiming: 0, burst: 0, burstT: 0, bay: 0, part: ev.part, loyal: !!ev.loyal };
   if (ev.type === 'mini' || ev.type === 'mine' || ev.type === 'splitter') e.x = e.x0 = clamp(e.x, XL + 30, XR - 30);
-  if (LV.mode === 'escort' || LV.mode === 'defend') e.ally = !!ev.tgt || Math.random() < .35; // some of them go for the people you're protecting
+  if (LV.mode === 'escort' || LV.mode === 'defend') e.ally = !!ev.tgt || Math.random() < .45; // some of them go for the people you're protecting
   if (ev.evac) { e.evac = 1; e.ty = ev.ty; e.life = 13; e.life0 = 13; }
   e.fire = e.fireRate ? e.fireRate * (.4 + Math.random() * .6) : 0;
   if (e.type === 'bomber') { e.x = e.dir > 0 ? XL - 60 : XR + 60; }
@@ -1556,7 +1558,7 @@ function gainPower(k) {
 }
 function hurtAlly(a, d) {
   if (a.dead || a.safe || run.endT > 0) return;
-  a.hp -= d * (a.kind === 'camp' ? .5 : .5) * DIFFS[save.diff].dmg; a.flash = .1; sparks(a.x + rand(-a.hw, a.hw) * .5, a.y + rand(-a.hh, a.hh) * .5, '#ffb070', 3);
+  a.hp -= d * .5 * Math.min(1, DIFFS[save.diff].dmg); // Ace already brings more fire; don't also make each hit hurt more a.flash = .1; sparks(a.x + rand(-a.hw, a.hw) * .5, a.y + rand(-a.hh, a.hh) * .5, '#ffb070', 3);
   if (a.hp <= 0) {
     a.dead = true; boom(a.x, a.y, a.kind === 'camp' ? 60 : 30); scorch(a.x, a.y, a.kind === 'camp' ? 90 : 40); shake = Math.max(shake, 8); SND.bigBoom(sndPan(a.x));
     texts.push({ x: a.x, y: a.y - 40, s: a.kind === 'camp' ? 'THE CAMP HAS FALLEN' : 'CONVOY TRUCK LOST', c: '#ff5a4f', t: 1.6, sz: 16 });
@@ -1638,7 +1640,7 @@ function drawAllies() {
 function drawObjective() {
   if (!LV.mode || LV.rush) return;
   const M = MODES[LV.mode]; let txt = null, k = null;
-  if (LV.mode === 'escort') { const alive = allies.filter(a => !a.dead); txt = `CONVOY ${alive.length}/3`; k = allies.reduce((s, a) => s + Math.max(0, a.hp), 0) / 600; }
+  if (LV.mode === 'escort') { const alive = allies.filter(a => !a.dead); txt = `CONVOY ${alive.length}/3`; k = allies.reduce((s, a) => s + Math.max(0, a.hp), 0) / allies.reduce((s, a) => s + a.max, 0); }
   else if (LV.mode === 'defend') { const c = allies.find(a => a.kind === 'camp'); if (c && !c.dead) { txt = c.hold == null ? 'CAMP INBOUND' : c.hold > 0 ? `HOLD ${Math.ceil(c.hold)}s` : 'CAMP SAFE'; k = c.hp / c.max; } }
   else if (LV.mode === 'evac') { const need = Math.ceil(LV.survivors / 2); txt = `EVAC ${run.rescued}/${need} needed${run.lost ? ` · ${run.lost} lost` : ''}`; }
   if (!txt) return;
@@ -1686,15 +1688,16 @@ let shotTag = null; // 'boss' while a boss pattern is firing, so its rounds draw
 function eShoot(x, y, a, sp) {
   if (!isFinite(a)) a = Math.PI / 2; // a NaN angle made invisible bullets that never left the list
   sp *= DIFFS[save.diff].bspd * TM.bspd * (1 + LV.s * .07);
-  const b = { x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: 6, bolt: sp > 250, boss: shotTag === 'boss' };
+  const b = { x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: 6, bolt: sp > 250, boss: shotTag === 'boss', ally: !!(shooter && shooter.ally && shooter.aimAlly) };
   eb.push(b);
   return b;
 }
 const aim = e => {
   if (e.ally && !e.boss && allies.length) {
     let best = null, bd = 1e12; for (const a of allies) if (!a.dead && !a.safe && a.y > 0) { const d = dist2(a, e); if (d < bd) { bd = d; best = a; } }
-    if (best) return Math.atan2(best.y + rand(-best.hh, best.hh) * .6 - e.y, best.x + rand(-best.hw, best.hw) * .6 - e.x);
+    if (best) { e.aimAlly = true; return Math.atan2(best.y + rand(-best.hh, best.hh) * .6 - e.y, best.x + rand(-best.hw, best.hw) * .6 - e.x); }
   }
+  e.aimAlly = false;
   return Math.atan2(P.y - e.y, P.x - e.x);
 };
 
@@ -1989,6 +1992,7 @@ function update(dt) {
 
   // ---- enemies
   for (const e of enemies) { if (!e.dead) updEnemy(e, dt); }
+  shooter = null;
   enemies = enemies.filter(e => !e.dead);
   for (const e of enemies) if (e.beam && e.beam.on > 0 && !P.dead && Math.abs(P.x - e.beam.x) < 26 && P.y > e.y) hurtPlayer(20);
 
@@ -2003,7 +2007,7 @@ function update(dt) {
     else {
       if (solids.length) { const o = solidAt(b.x, b.y, b.r * .5); if (o && o.beh === 'tall') { b.dead = true; sparks(b.x, b.y, '#ff9a7a', 2); continue; } }
       if (!P.dead && (b.x - P.x) ** 2 + (b.y - P.y) ** 2 < (P.r + b.r - 1) ** 2) { b.dead = true; hurtPlayer(10 * (1 + LV.L * .04)); }
-      else if (allies.length) for (const a of allies) if (!a.dead && Math.abs(b.x - a.x) < a.hw && Math.abs(b.y - a.y) < a.hh) { b.dead = true; hurtAlly(a, 10 * (1 + LV.L * .04)); break; }
+      else if (b.ally && allies.length) for (const a of allies) if (!a.dead && Math.abs(b.x - a.x) < a.hw && Math.abs(b.y - a.y) < a.hh) { b.dead = true; hurtAlly(a, 10); break; } // flat per hit: the drones' own scaling is tuned against you, not the trucks
     }
   }
   eb = eb.filter(b => !b.dead);
@@ -2121,7 +2125,9 @@ function dronePos() {
   return out;
 }
 
+let shooter = null; // the drone currently updating, so eShoot knows whether its fire is meant for the convoy/camp
 function updEnemy(e, dt) {
+  shooter = e;
   e.t += dt; if (e.flash > 0) e.flash -= dt;
   if (e.lx != null) e.bvx = (e.bvx || 0) * .85 + ((e.x - e.lx) / Math.max(dt, 1e-3)) * .15; // for banking
   e.lx = e.x;
