@@ -588,7 +588,9 @@ function loadRaster() {
       const g = c.getContext('2d');
       g.drawImage(im, 0, 0);
       g.globalCompositeOperation = 'source-in'; g.fillStyle = '#000'; g.fillRect(0, 0, c.width, c.height);
-      RASTER[id] = { img: im, shadow: c, h: hpx / 2 };
+      const wc = document.createElement('canvas'); wc.width = im.width; wc.height = im.height; // hit-flash silhouette
+      const wg = wc.getContext('2d'); wg.drawImage(im, 0, 0); wg.globalCompositeOperation = 'source-in'; wg.fillStyle = '#fff'; wg.fillRect(0, 0, wc.width, wc.height);
+      RASTER[id] = { img: im, shadow: c, white: wc, h: hpx / 2 };
     };
     im.src = 'sprites/' + id + '.png';
   }
@@ -617,10 +619,12 @@ function drawGroundTex(B) {
 // the terrain and the grade instead.
 function rasterFor(id) { return RASTER[id] || null; }
 
+let rasterFlash = 0; // set by drawEnemy/drawBoss while the thing being drawn is flashing from a hit
 function drawRaster(r, x, y) {
   if (!r) return false;
   const h = r.h, w = h * (r.img.width / r.img.height);
   ctx.drawImage(SHADOW ? r.shadow : r.img, x - w / 2, y - h / 2, w, h);
+  if (rasterFlash > 0 && !SHADOW) { const a = ctx.globalAlpha; ctx.globalAlpha = a * Math.min(1, rasterFlash * 12); ctx.drawImage(r.white, x - w / 2, y - h / 2, w, h); ctx.globalAlpha = a; }
   return true;
 }
 
@@ -1447,6 +1451,7 @@ function killEnemy(e) {
   e.dead = true;
   boom(e.x, e.y, e.r);
   if (e.boss) SND.bigBoom(sndPan(e.x)); else if (e.type === 'cache') SND.cache(); else SND.boom(e.r, sndPan(e.x));
+  if (e.boss) { stopFor(.28); buzz([70, 50, 160], 1); } else if (e.r >= 40 || e.elite) { stopFor(.045); buzz(18, .4); }
   if (e.type === 'cache') {
     dropStars(e.x, e.y, Math.round((25 + LV.L * 7) * TM.stars) * (LV.rush ? 2 : 1));
     if (Math.random() < .5) pickups.push({ kind: 'hp', x: e.x, y: e.y, vx: rand(-40, 40), vy: -80, t: 0 });
@@ -1502,7 +1507,7 @@ function hurtPlayer(d) {
   d *= DIFFS[save.diff].dmg * TM.dmg * TH.dmg * (1 - ST.armor);
   P.shDelay = 3;
   if (P.shield > 0) { const a = Math.min(P.shield, d); P.shield -= a; d -= a; }
-  if (d > 0) { P.hp -= d; run.damaged = true; P.inv = .9 * ST.invMul; shake = 9; sparks(P.x, P.y, '#ff6a4a', 12); SND.hurt(sndPan(P.x)); }
+  if (d > 0) { P.hp -= d; run.damaged = true; P.inv = .9 * ST.invMul; shake = 9; sparks(P.x, P.y, '#ff6a4a', 12); SND.hurt(sndPan(P.x)); stopFor(.07); buzz(60, .8); }
   else { P.inv = .35; sparks(P.x, P.y, '#6fe3ff', 8); SND.shield(); }
   if (P.hp <= 0) {
     if (P.rev > 0) {
@@ -1514,9 +1519,10 @@ function hurtPlayer(d) {
   }
 }
 
+function useAbility() { if (typeof shipAbility === 'function') shipAbility(); }
 function useBomb() {
   if (state !== 'play' || paused || run.bombs <= 0 || P.dead || run.endT > 0) return;
-  run.bombs--; run.usedBomb = true; flash = .7; shake = 10; SND.emp();
+  run.bombs--; run.usedBomb = true; flash = .7; shake = 10; SND.emp(); buzz(90, .9);
   eb.forEach(b => sparks(b.x, b.y, '#9ff', 1));
   eb = [];
   const d = 160 * (1 + LV.L * .3);
@@ -1597,6 +1603,7 @@ function update(dt) {
     let ky = (keys.ArrowDown || keys.KeyS ? 1 : 0) - (keys.ArrowUp || keys.KeyW ? 1 : 0);
     const ox = P.x;
     if (kx || ky) { const m = Math.hypot(kx, ky); P.x += kx / m * 400 * ST.speed * dt; P.y += ky / m * 400 * ST.speed * dt; P.tx = null; }
+    else if (pad.x || pad.y) { P.x += pad.x * 430 * ST.speed * dt; P.y += pad.y * 430 * ST.speed * dt; P.tx = null; kx = pad.x; ky = pad.y; }
     else if (P.tx != null) {
       const dx = P.tx - P.x, dy = P.ty - P.y, d = Math.hypot(dx, dy), mx = 1000 * ST.speed * dt;
       if (d > mx) { P.x += dx / d * mx; P.y += dy / d * mx; } else { P.x = P.tx; P.y = P.ty; }
@@ -2106,6 +2113,10 @@ function bodyGrad(r, c) {
 function hex(r) { ctx.beginPath(); for (let i = 0; i < 6; i++) ctx.lineTo(Math.cos(i * Math.PI / 3) * r, Math.sin(i * Math.PI / 3) * r); ctx.closePath(); }
 
 function drawEnemy(e) {
+  rasterFlash = e.flash > 0 ? e.flash : 0;
+  try { drawEnemy0(e); } finally { rasterFlash = 0; }
+}
+function drawEnemy0(e) {
   const S = SECTORS[LV ? LV.s : 0], col = e.flash > 0 ? '#fff' : bodyGrad(e.r, S.enemy);
   ctx.save(); ctx.translate(e.x, e.y);
   if (e.ground && BIOMES[curSector] === 'seas' && e.type !== 'survivor') { // floating platform
@@ -2299,6 +2310,10 @@ function gear(x, y, r, c, rot) {
   ctx.restore();
 }
 function drawBoss(e) {
+  rasterFlash = e.flash > 0 ? e.flash * .6 : 0;
+  try { drawBoss0(e); } finally { rasterFlash = 0; }
+}
+function drawBoss0(e) {
   const S = SECTORS[LV.s], col = e.flash > 0 ? '#fff' : bodyGrad(e.r, S.enemy), R = e.r, dark = bodyGrad(e.r * 1.3, '#3d4250');
   const sc = k => q => [q[0] * R * k, q[1] * R * k];
   ctx.save(); ctx.translate(e.x, e.y);
@@ -3018,6 +3033,57 @@ cv.addEventListener('pointermove', ev => {
 const endPtr = ev => { if (pointer && pointer.id === ev.pointerId) pointer = null; };
 cv.addEventListener('pointerup', endPtr); cv.addEventListener('pointercancel', endPtr);
 
+/* ------------------------------ GAMEPAD ------------------------------ */
+// Any standard-mapping controller: left stick or d-pad flies, A or RB fires the EMP, X or LB uses the ship's
+// ability, Start pauses. In menus the d-pad / stick moves focus between buttons and A presses the focused one.
+const pad = { x: 0, y: 0, prev: [], navT: 0, seen: false };
+function padFocusables() {
+  const sheet = $('tierSheet'), root = sheet && !sheet.classList.contains('hidden') ? '#tierSheet' : '.screen:not(.hidden)';
+  const sel = ['button', '.btn', '.lvl:not(.locked)', '.rush', '[data-ship]', '[data-u]', '[data-t]'].map(q => root + ' ' + q).join(',');
+  const list = [...document.querySelectorAll(sel)].filter(b => b.offsetParent && !b.disabled);
+  for (const b of list) if (b.tabIndex < 0) b.tabIndex = 0; // divs need a tabindex to take focus
+  return list;
+}
+function padMove(d) {
+  const list = padFocusables(); if (!list.length) return;
+  const i = list.indexOf(document.activeElement);
+  const n = list[i < 0 ? 0 : (i + d + list.length) % list.length];
+  n.focus({ preventScroll: false }); n.scrollIntoView?.({ block: 'nearest' });
+}
+function pollPad(dt) {
+  const g = navigator.getGamepads ? [...navigator.getGamepads()].find(p => p && p.connected) : null;
+  if (!g) { pad.x = pad.y = 0; return; }
+  if (!pad.seen) { pad.seen = true; document.body.classList.add('pad'); }
+  const b = i => !!(g.buttons[i] && g.buttons[i].pressed), now = g.buttons.map(x => x.pressed), hit = i => now[i] && !pad.prev[i];
+  let x = Math.abs(g.axes[0] || 0) > .2 ? g.axes[0] : 0, y = Math.abs(g.axes[1] || 0) > .2 ? g.axes[1] : 0;
+  if (b(14)) x = -1; if (b(15)) x = 1; if (b(12)) y = -1; if (b(13)) y = 1;
+  const m = Math.hypot(x, y); if (m > 1) { x /= m; y /= m; }
+  pad.x = x; pad.y = y;
+  if (state === 'play') {
+    if (hit(0) || hit(5)) useBomb();
+    if (hit(2) || hit(4)) useAbility();
+    if (hit(9)) pauseGame();
+  } else {
+    pad.navT -= dt;
+    const dir = Math.abs(y) > .6 ? Math.sign(y) : Math.abs(x) > .6 ? Math.sign(x) : 0;
+    if (dir && pad.navT <= 0) { padMove(dir); pad.navT = .22; } else if (!dir) pad.navT = 0;
+    if (hit(0)) { const f = document.activeElement; if (f && padFocusables().includes(f)) { SND.unlock(); f.click(); } else padMove(1); }
+    if (hit(9) && state === 'pause') $('pResume').click();
+  }
+  pad.prev = now;
+}
+// Feel: a brief freeze on heavy hits (hit-stop), and a buzz on phones that allow it (Android; iOS Safari
+// ignores navigator.vibrate) and on controllers with rumble.
+let hitstop = 0;
+function stopFor(s) { hitstop = Math.max(hitstop, s); }
+function buzz(ms, strong = .5) {
+  try { if (navigator.vibrate) navigator.vibrate(ms); } catch (e) {}
+  try {
+    const g = navigator.getGamepads && [...navigator.getGamepads()].find(p => p && p.connected);
+    const v = g && g.vibrationActuator; if (v && v.playEffect) v.playEffect('dual-rumble', { duration: Array.isArray(ms) ? 200 : ms, strongMagnitude: strong, weakMagnitude: strong * .6 });
+  } catch (e) {}
+}
+
 /* ------------------------------ BOOT ------------------------------ */
 $('resRetry').onclick = () => { if (lastLevel) lastLevel.rush ? newRun(genRush(lastLevel.s)) : startLevel(lastLevel.L, lastLevel.tier || 0); };
 $('resHangar').onclick = () => go(run && run.newShip ? 'fleet' : 'hangar');
@@ -3028,7 +3094,9 @@ function frame(now) {
   // schedule first: one bad frame (a draw or update error) must never stop the game loop
   requestAnimationFrame(frame);
   const dt = Math.min(.033, (now - last) / 1000); last = now;
-  try { if (state === 'play' && !paused) update(dt); } catch (e) { console.error('update', e); }
+  try { pollPad(dt); } catch (e) { console.error('pad', e); }
+  if (hitstop > 0) hitstop -= dt; // hit-stop: hold the world still for a few frames, keep drawing
+  else try { if (state === 'play' && !paused) update(dt); } catch (e) { console.error('update', e); }
   try { render(); } catch (e) { console.error('render', e); try { ctx.restore(); } catch (_) {} }
 }
 requestAnimationFrame(frame);

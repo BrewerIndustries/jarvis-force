@@ -168,3 +168,6 @@ canvas{position:absolute;inset:0;width:540px;height:960px;display:block}
 .upg.secret h4 { color: #ffb3a6; }
 .upg.secret .btn { border-color: rgba(255, 90, 79, .5); color: #ffd7d0; }
 .upg.secret .btn:disabled { opacity: .5; }
+
+/* controller focus ring: only once a gamepad has been used */
+body.pad :focus { outline: 3px solid #ffd34d; outline-offset: 3px; box-shadow: 0 0 18px rgba(255, 211, 77, .45); }
