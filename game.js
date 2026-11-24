@@ -490,7 +490,7 @@ function newRun(level) {
     usedBomb: false, combo: 0, comboT: 0, bestCombo: 0, lastKill: -9, endT: 0, failT: 0, failed: false, rescueStars: 0, done: false,
     found: [], newShip: null };
   enemies = []; pb = []; eb = []; pickups = []; parts = []; texts = [];
-  levelT = 0; boss = null; flash = 0; shake = 0; camX = 0; strikes = [];
+  levelT = 0; boss = null; flash = 0; shake = 0; camX = 0; strikes = []; cine = null;
   LV.tl = LV.tl.slice();
   seedBg();
   banner = { a: LV.rush ? 'STAR RUSH' : `MISSION ${LV.label}`, b: LV.rush ? 'Grab everything that glitters' : LV.name, t: 3 };
@@ -1417,6 +1417,14 @@ const BOSSES = [
   { shape: 'eye', phases: [['radial', 'fan', 'beam', 'shards'], ['cross', 'summon', 'cone', 'wave', 'beam'], ['spiral', 'shards', 'beam', 'mines', 'rain', 'cone']] },
 ];
 const VANGUARD_PATS = [['fan', 'radial', 'wave'], ['cone', 'fan', 'spiral'], ['shards', 'fan', 'radial'], ['cross', 'fan', 'wave'], ['bolts', 'fan', 'rain'], ['beam', 'radial', 'cone']];
+const BOSS_SUB = ['Sovereign of the Drowned Coast', 'Furnace of the Ashen Peaks', 'Jaws of the Frozen Relay',
+  'Warden of the Overgrown Sprawl', 'Eye of the Stormfront', 'Mind of the Rust Legion'];
+let cine = null; // boss entrance: { t, name, sub }
+const CINE_LEN = 3.4;
+function cineScale() { // world speed during the entrance: dips to 40%, back to full by 2s
+  if (!cine) return 1; const t = cine.t;
+  return t < .5 ? 1 - t * 1.2 : t < 1.4 ? .4 : Math.min(1, .4 + (t - 1.4) * 1.0);
+}
 function spawnBoss() {
   const S = SECTORS[LV.s], major = LV.major, cfg = BOSSES[LV.s];
   const hp = (major ? 1500 : 620) * (1 + LV.L * .55 + LV.s * .06) * TM.hp * TH.hp;
@@ -1425,15 +1433,22 @@ function spawnBoss() {
     name: major ? S.boss : `${S.boss.split(' ')[0]} VANGUARD`, spin: 0, shape: cfg.shape, phase: 0,
     phases: major && cfg.phases ? cfg.phases : null, pats: major ? (cfg.phases ? cfg.phases[0] : cfg.pats) : VANGUARD_PATS[LV.s], beam: null };
   enemies.push(boss);
-  banner = { a: 'WARNING', b: boss.name + ' INBOUND', t: 3, warn: true };
-  SND.warn(); SND.music('boss', LV.L * 13 + 7, [0, -2, 2, -1, 1, -3][LV.s]);
+  // entrance: siren, then slow motion, letterbox bars and a name card while the boss descends
+  banner = null;
+  cine = { t: 0, name: boss.name, sub: major ? BOSS_SUB[LV.s] : `Forward unit of the ${S.boss.toLowerCase().replace(/\b\w/g, c => c.toUpperCase())}`, major };
+  SND.warn(); setTimeout(() => SND.bossIntro && SND.bossIntro(major), 650); SND.music('boss', LV.L * 13 + 7, [0, -2, 2, -1, 1, -3][LV.s]);
 }
 
 /* ------------------------------ COMBAT ------------------------------ */
 function addPB(x, y, vx, vy, dmg, r, kind) { pb.push({ x, y, vx, vy, dmg, r, kind, pierce: kind === 'b' ? (ST.pierce || 0) : 0, lastHit: null }); }
+const BULLET = {
+  drone: { glow: 'rgba(255,84,48,.42)', body: '#ff6a4a', core: '#fff3d0' },
+  boss: { glow: 'rgba(255,60,210,.45)', body: '#ff4fd8', core: '#fff0fb' },
+};
+let shotTag = null; // 'boss' while a boss pattern is firing, so its rounds draw in the boss colour
 function eShoot(x, y, a, sp) {
   sp *= DIFFS[save.diff].bspd * TM.bspd * (1 + LV.s * .07);
-  const b = { x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: 6, bolt: sp > 250 };
+  const b = { x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: 6, bolt: sp > 250, boss: shotTag === 'boss' };
   eb.push(b);
   return b;
 }
@@ -1574,6 +1589,7 @@ function sparks(x, y, c, n) {
 
 /* ------------------------------ UPDATE ------------------------------ */
 function update(dt) {
+  if (cine) { cine.t += dt; if (cine.t > CINE_LEN) cine = null; dt *= cineScale(); }
   gameT += dt; levelT += dt;
   updBg(dt); updStrikes(dt); updStructs();
   if (banner) { banner.t -= dt; if (banner.t <= 0) banner = null; }
@@ -1669,7 +1685,7 @@ function update(dt) {
   for (const b of eb) {
     if (b.split != null) { // shard: bursts into a ring
       b.split -= dt;
-      if (b.split <= 0) { b.dead = true; for (let i = 0; i < 8; i++) eShoot(b.x, b.y, i / 8 * Math.PI * 2 + b.x * .01, 120); continue; }
+      if (b.split <= 0) { b.dead = true; shotTag = b.boss ? 'boss' : null; for (let i = 0; i < 8; i++) eShoot(b.x, b.y, i / 8 * Math.PI * 2 + b.x * .01, 120); shotTag = null; continue; }
     }
     b.x += b.vx * dt; b.y += b.vy * dt;
     if (b.y > H + 20 || b.y < -40 || b.x < XL - 20 || b.x > XR + 20) b.dead = true;
@@ -1923,6 +1939,7 @@ function updBoss(e, dt) {
   e.pt += dt; e.fireT -= dt;
   const p = pats[e.pat], s = LV.s;
   if (e.fireT <= 0) {
+    shotTag = 'boss';
     // Every boss must be beatable without taking a hit. Each pattern is built from fixed geometry with a
     // guaranteed way through: a gap needs >24px between bullet centres (hitbox 7 + bullet 6, both sides), so rings
     // and fans keep that from ~200px out; walls and the rain carry an open lane that moves slower than the ship;
@@ -1966,6 +1983,7 @@ function updBoss(e, dt) {
         break; }
       case 'summon': { e.fireT = 99; for (const sx of [-1, 1]) spawn({ type: 'splitter', x: e.x + sx * 120, y: e.y, counted: false }); break; }
     }
+    shotTag = null;
   }
   const dur = { minions: 1.5, mines: 1.5, summon: 1.5, beam: 2.8, rain: 4 }[p] || 3.2;
   if (e.pt > dur) e.rest = 1.1 * rage;
@@ -2439,6 +2457,25 @@ function segmentedBar(x, y, w, h, k, col) {
     }
   }
 }
+function drawCine() {
+  const t = cine.t, inn = Math.min(1, t / .45), out = Math.min(1, Math.max(0, (CINE_LEN - t) / .5)), k = Math.min(inn, out);
+  const bar = 64 * k * (2 - k);
+  ctx.fillStyle = '#000'; ctx.fillRect(0, 0, W, bar); ctx.fillRect(0, H - bar, W, bar);
+  if (t < .9) { // siren flash first
+    ctx.globalAlpha = .5 * (Math.sin(t * 22) * .5 + .5) * k; ctx.fillStyle = '#ff3b30'; ctx.fillRect(0, bar, W, 6); ctx.fillRect(0, H - bar - 6, W, 6); ctx.globalAlpha = 1;
+  }
+  const c = clamp((t - .55) / .5, 0, 1), slide = (1 - c) * (1 - c) * -W * .6, a = Math.min(c, out);
+  if (a <= 0) return;
+  ctx.save(); ctx.globalAlpha = a; ctx.translate(slide, 0);
+  const y = H * .3;
+  ctx.fillStyle = 'rgba(8,10,16,.72)'; ctx.fillRect(0, y - 46, W, 92);
+  ctx.fillStyle = cine.major ? '#ff4fd8' : '#ff9a3d'; ctx.fillRect(0, y - 46, W, 3); ctx.fillRect(0, y + 43, W, 3);
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#ff6a5f'; ctx.font = '700 13px Orbitron, sans-serif'; ctx.fillText(cine.major ? '— SECTOR COMMANDER —' : '— VANGUARD —', W / 2, y - 22);
+  ctx.fillStyle = '#ffffff'; ctx.font = '900 34px Orbitron, sans-serif'; ctx.fillText(cine.name, W / 2, y + 12);
+  ctx.fillStyle = '#c9d6e6'; ctx.font = 'italic 600 17px Rajdhani, sans-serif'; ctx.fillText(cine.sub, W / 2, y + 34);
+  ctx.restore();
+}
 function drawHUD() {
   const hp = clamp(P.hp / ST.maxHp, 0, 1), shield = !!ST.shield;
   panel(12, 12, 210, shield ? 44 : 30, 9);
@@ -2622,12 +2659,16 @@ function render() {
       ctx.strokeStyle = 'rgba(255,80,50,.42)'; ctx.lineWidth = b.r * 1.7; ctx.lineCap = 'round';
       ctx.beginPath(); ctx.moveTo(b.x - tx * 26, b.y - ty * 26); ctx.lineTo(b.x, b.y); ctx.stroke(); ctx.lineCap = 'butt';
     } else {
-      ctx.strokeStyle = 'rgba(255,80,50,.26)'; ctx.lineWidth = b.r * 1.1; ctx.lineCap = 'round';
+      ctx.strokeStyle = b.boss ? 'rgba(255,79,216,.3)' : 'rgba(255,80,50,.3)'; ctx.lineWidth = b.r * 1.1; ctx.lineCap = 'round';
       ctx.beginPath(); ctx.moveTo(b.x - tx * 13, b.y - ty * 13); ctx.lineTo(b.x, b.y); ctx.stroke(); ctx.lineCap = 'butt';
     }
-    ctx.fillStyle = 'rgba(255,70,50,.35)'; ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 4, 0, 7); ctx.fill();
-    ctx.fillStyle = '#ff6a4a'; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 7); ctx.fill();
-    ctx.fillStyle = '#fff3d0'; ctx.beginPath(); ctx.arc(b.x - tx * 1.5, b.y - ty * 1.5, b.r * .45, 0, 7); ctx.fill();
+    // Boss rounds are magenta, drone rounds orange-red: nothing else on screen uses either. A dark rim keeps
+    // both readable over bright sea and sand, and the glow carries them through the Stormfront rain.
+    const bc = b.boss ? BULLET.boss : BULLET.drone;
+    ctx.fillStyle = bc.glow; ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 5 + (b.boss ? Math.sin(gameT * 14 + b.x) * 1.2 : 0), 0, 7); ctx.fill();
+    ctx.fillStyle = 'rgba(24,4,14,.85)'; ctx.beginPath(); ctx.arc(b.x, b.y, b.r + 1.6, 0, 7); ctx.fill();
+    ctx.fillStyle = bc.body; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 7); ctx.fill();
+    ctx.fillStyle = bc.core; ctx.beginPath(); ctx.arc(b.x - tx * 1.5, b.y - ty * 1.5, b.r * .48, 0, 7); ctx.fill();
   }
   // particles: smoke, shrapnel and shockwaves first, then the additive fire on top of them
   const drawPart = p => {
@@ -2694,6 +2735,7 @@ function render() {
   if (flash > 0) { ctx.fillStyle = `rgba(200,240,255,${Math.min(.6, flash)})`; ctx.fillRect(0, 0, W, H); }
   drawBloom();
   drawHUD();
+  if (cine) drawCine();
   if (banner) {
     const a = Math.min(1, banner.t, 3 - banner.t + .2);
     ctx.globalAlpha = clamp(a, 0, 1);

@@ -480,6 +480,15 @@ const SND = (() => {
     // UI and results
     click() { if (throttle('clk', 40)) tone(720, .045, { type: 'square', gain: .03 }); },
     buy() { tone(1319, .08, { type: 'square', gain: .04 }); tone(1760, .2, { type: 'square', gain: .04, delay: .07 }); },
+    // boss entrance: a timpani roll swelling into a low brass chord (minor for a sector commander)
+    bossIntro(major = true) {
+      if (!live()) return;
+      const t0 = ctx.currentTime + .02;
+      for (let i = 0; i < 10; i++) timp(41, t0 + i * .07, .25 + i * .07);
+      const root = major ? 45 : 50, ch = major ? [0, 3, 7, 12] : [0, 7, 12];
+      for (const iv of ch) brass(root + iv, t0 + .72, 1.6, .9, .7);
+      tuba(root - 12, t0 + .72, 1.6, 1); crash(t0 + .72, .8);
+    },
     win() { phrase([[67, 1], [67, 1], [67, 1], [72, 3, [64, 67]], [0, 1], [71, 1], [72, 1], [76, 1], [79, 6, [72, 76]]], .12); },
     lose() { phrase([[67, 3], [65, 3], [63, 3], [60, 8, [55, 51]]], .16, .7); },
   };
