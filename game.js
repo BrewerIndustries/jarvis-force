@@ -1684,6 +1684,7 @@ const BULLET = {
 };
 let shotTag = null; // 'boss' while a boss pattern is firing, so its rounds draw in the boss colour
 function eShoot(x, y, a, sp) {
+  if (!isFinite(a)) a = Math.PI / 2; // a NaN angle made invisible bullets that never left the list
   sp *= DIFFS[save.diff].bspd * TM.bspd * (1 + LV.s * .07);
   const b = { x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, r: 6, bolt: sp > 250, boss: shotTag === 'boss' };
   eb.push(b);
@@ -1998,7 +1999,7 @@ function update(dt) {
       if (b.split <= 0) { b.dead = true; shotTag = b.boss ? 'boss' : null; for (let i = 0; i < 8; i++) eShoot(b.x, b.y, i / 8 * Math.PI * 2 + b.x * .01, 120); shotTag = null; continue; }
     }
     b.x += b.vx * dt; b.y += b.vy * dt;
-    if (b.y > H + 20 || b.y < -40 || b.x < XL - 20 || b.x > XR + 20) b.dead = true;
+    if (!(b.y <= H + 20 && b.y >= -40 && b.x >= XL - 20 && b.x <= XR + 20)) b.dead = true; // negated so NaN drops out too
     else {
       if (solids.length) { const o = solidAt(b.x, b.y, b.r * .5); if (o && o.beh === 'tall') { b.dead = true; sparks(b.x, b.y, '#ff9a7a', 2); continue; } }
       if (!P.dead && (b.x - P.x) ** 2 + (b.y - P.y) ** 2 < (P.r + b.r - 1) ** 2) { b.dead = true; hurtPlayer(10 * (1 + LV.L * .04)); }
@@ -2295,7 +2296,7 @@ function updBoss(e, dt) {
         SND.volley(sndPan(e.x)); break; }
       case 'cone': { // flame tongues: aim locks for each four-arc burst, so the lanes between the rays stay straight
         e.fireT = .16 * rage; e.fc = (e.fc || 0) + 1;
-        if (e.fc % 8 < 4) { if (e.fc % 8 === 0) e.ca = aim(e); break; } // breath
+        if (e.fc % 8 < 4) { if (e.fc % 8 === 0 || e.ca == null) e.ca = aim(e); break; } // breath (and lock an aim before the very first burst)
         for (let i = -3; i <= 3; i++) eShoot(e.x, e.y + e.r * .6, e.ca + i * .16, 170);
         if (e.fc % 8 === 4) SND.flame(); break; }
       case 'mines': { e.fireT = 99; for (let i = 0; i < 3; i++) spawn({ type: 'mine', x: XL + 110 + i * (WW - 220) / 2, y: e.y + 20, counted: false }); break; }
