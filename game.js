@@ -1343,7 +1343,7 @@ function drawBolt(pts, w) {
 function drawStrikes() {
   for (const s of strikes) {
     if (s.tele > 0) {
-      const k = 1 - s.tele / .95;
+      const k = clamp(1 - s.tele / (s.tele0 || .95), 0, 1); // warning ring fills as the strike nears
       ctx.fillStyle = `rgba(160,220,255,${.1 + k * .2})`; ctx.beginPath(); ctx.arc(s.x, s.y, 40 * k, 0, 7); ctx.fill();
       ctx.strokeStyle = 'rgba(190,235,255,.85)'; ctx.lineWidth = 2; ctx.setLineDash([7, 6]);
       ctx.beginPath(); ctx.arc(s.x, s.y, 40, 0, 7); ctx.stroke(); ctx.setLineDash([]);
@@ -1929,7 +1929,7 @@ function updBoss(e, dt) {
       case 'bolts': { // one strike on you and two flanking it, so stepping up or down is always clear
         e.fireT = 1.35;
         const bx = clamp(P.x, XL + 30, XR - 30), by = clamp(P.y, 140, H - 60);
-        for (const dx of [0, -105, 105]) strikes.push({ x: clamp(bx + dx, XL + 30, XR - 30), y: by, tele: 1, on: 0 });
+        for (const dx of [0, -105, 105]) strikes.push({ x: clamp(bx + dx, XL + 30, XR - 30), y: by, tele: 1, tele0: 1, on: 0 });
         break; }
       case 'summon': { e.fireT = 99; for (const sx of [-1, 1]) spawn({ type: 'splitter', x: e.x + sx * 120, y: e.y, counted: false }); break; }
     }
@@ -2999,10 +2999,11 @@ $('resHangar').onclick = () => go(run && run.newShip ? 'fleet' : 'hangar');
 seedBg();
 let last = performance.now();
 function frame(now) {
-  const dt = Math.min(.033, (now - last) / 1000); last = now;
-  if (state === 'play' && !paused) update(dt);
-  render();
+  // schedule first: one bad frame (a draw or update error) must never stop the game loop
   requestAnimationFrame(frame);
+  const dt = Math.min(.033, (now - last) / 1000); last = now;
+  try { if (state === 'play' && !paused) update(dt); } catch (e) { console.error('update', e); }
+  try { render(); } catch (e) { console.error('render', e); try { ctx.restore(); } catch (_) {} }
 }
 requestAnimationFrame(frame);
 go('menu');
