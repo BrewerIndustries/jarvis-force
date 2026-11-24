@@ -644,6 +644,23 @@ for (const b of ['isles', 'peaks', 'seas', 'sprawl', 'storm', 'core']) {
 // draws the tile in world space, keyed to world distance (bgScroll), so it moves with the terrain and never
 // pops. Stretched 8% across the 728px the procedural base covers (panned world plus shake margin); the tiles
 // overlap by a pixel so no seam shows at fractional rows. Two or three drawImage calls a frame, nothing else.
+// Rendered surface textures for the terrain props (tools/gen_props.py). The procedural shapes, lean and
+// altitudes stay; each top face / facet is clipped and the surface laid over it, anchored to the object so it
+// travels with it. Missing files just leave the procedural paint.
+const SURF = {};
+for (const k of ['jungle', 'rock', 'ice', 'roof']) {
+  const im = new Image();
+  im.onload = () => { try { SURF[k] = ctx.createPattern(im, 'repeat'); } catch (e) {} };
+  im.src = 'sprites/surf_' + k + '.jpg';
+}
+function paintSurf(k, path, x, y, sc, a, mode) {
+  const p = SURF[k]; if (!p || SHADOW) return;
+  ctx.save(); path(); ctx.clip();
+  try { p.setTransform(new DOMMatrix([sc, 0, 0, sc, x, y])); } catch (e) {}
+  ctx.globalAlpha = a; ctx.globalCompositeOperation = mode || 'source-over';
+  ctx.fillStyle = p; ctx.fillRect(-4000, -4000, 8000, 8000); // clipped to the face
+  ctx.restore();
+}
 function drawGroundTex(B) {
   const im = GROUND[B]; if (!im) return false;
   const off = bgScroll % GT;
@@ -795,6 +812,7 @@ function drawTower(o, pal) {
   const col = TOWER_COL[BIOMES[curSector]] || '#7a828c';
   const off = prism(o.x, o.y, o.pts, o.h, col, shade(col, 1.18), SHADOW ? 0 : 'rgba(255,96,72,.7)', 'rgba(0,0,0,.22)');
   if (SHADOW) return;
+  paintSurf('roof', () => poly(absPts(o.x, o.y, o.pts, off[0], off[1])), o.x + off[0], o.y + off[1], .26, .8, 'overlay');
   wallWindows(o.x, o.y, o.pts, o.h, o, { lit: '#ffb46a', dark: 'rgba(10,14,20,.6)', onChance: .2, cols: 3 });
   const tx = o.x + off[0], ty = o.y + off[1];
   // hazard band round the roof edge and a warning beacon: this one is at your altitude
@@ -950,6 +968,8 @@ function drawTerrainKind(o, S) {
       const g = ctx.createRadialGradient(-o.r * .42, -o.r * .48, o.r * .04, 0, 0, o.r);
       g.addColorStop(0, shade(S.land, 1.32)); g.addColorStop(.62, shade(S.land, 1.02)); g.addColorStop(1, shade(S.land, .68));
       ctx.fillStyle = g; blob(o.pts, .8); ctx.fill();
+      paintSurf('jungle', () => blob(o.pts, .8), o.r * 3, o.r * 5, .32, .62);
+      paintSurf('jungle', () => blob(o.pts, .8), o.r * 3, o.r * 5, .32, .35, 'overlay');
       // the far side of the land falls away from the light, so the bottom of the plateau is in shade
       ctx.save(); blob(o.pts, .8); ctx.clip();
       const slope = ctx.createLinearGradient(0, o.r * .05, 0, o.r * .95);
@@ -998,6 +1018,8 @@ function drawTerrainKind(o, S) {
       for (const q of f) {
         const lit = .38 + .62 * Math.max(0, -(q.nx * LX + q.ny * LY));
         ctx.fillStyle = shade(pal.rock, lit < .7 ? lit * .9 : 1 + (lit - .7) * .9); poly([pk, A[q.i], A[q.j]]); ctx.fill();
+        paintSurf('rock', () => poly([pk, A[q.i], A[q.j]]), o.x, o.y, .3, .42, 'multiply');
+        paintSurf('rock', () => poly([pk, A[q.i], A[q.j]]), o.x, o.y, .3, .6, 'overlay');
         const cap = o.vol ? .18 : .34, lerp = (p, t) => [pk[0] + (p[0] - pk[0]) * t, pk[1] + (p[1] - pk[1]) * t];
         ctx.fillStyle = shade(pal.cap, .55 + lit * .5); poly([pk, lerp(A[q.i], cap), lerp(A[q.j], cap)]); ctx.fill();
       }
@@ -1021,6 +1043,7 @@ function drawTerrainKind(o, S) {
       const off = prism(o.x, o.y + bob, o.pts, o.h, pal.iceSide, g, 'rgba(255,255,255,.5)');
       if (off) { // cracks across the top face, and a hard rim where the ice meets the light
         const top = absPts(o.x, o.y + bob, o.pts, off[0], off[1]);
+        paintSurf('ice', () => poly(top), o.x + o.ph * 40, o.y, .28, .55);
         ctx.save(); poly(top); ctx.clip();
         ctx.strokeStyle = 'rgba(138,186,214,.42)'; ctx.lineWidth = 1;
         for (let i = 0; i < 3; i++) {
@@ -1075,6 +1098,7 @@ function drawTerrainKind(o, S) {
       if (SHADOW) return;
       wallWindows(o.x, o.y, o.pts, o.h, o, { lit: '#ffd58a', dark: 'rgba(12,18,14,.5)', onChance: .34 });
       const tx = o.x + off[0], ty = o.y + off[1];
+      paintSurf('roof', () => poly(absPts(o.x, o.y, o.pts, off[0], off[1])), tx, ty, .24, .85, 'overlay');
       if (o.ac) { ctx.fillStyle = shade(pal.roof, .7); ctx.fillRect(tx - 10, ty - 8, 16, 12); ctx.fillStyle = shade(pal.roof, 1.2); ctx.fillRect(tx - 10, ty - 8, 16, 3); }
       trees(tx, ty, [{ x: 0, y: 0, c: o.vines }], pal.leaf);
       return; }
@@ -1089,10 +1113,12 @@ function drawTerrainKind(o, S) {
       ctx.globalAlpha = 1; ctx.restore();
       return; }
     case 'farm': {
-      prism(o.x, o.y, o.pts, o.h, pal.wall, shade(pal.roof, 1), 'rgba(255,255,255,.1)');
+      const fo = prism(o.x, o.y, o.pts, o.h, pal.wall, shade(pal.roof, 1), 'rgba(255,255,255,.1)');
+      if (fo) paintSurf('roof', () => poly(absPts(o.x, o.y, o.pts, fo[0], fo[1])), o.x, o.y, .22, .7, 'overlay');
       if (o.barn) prism(o.x + 44, o.y + 12, rectPts(30, 22), o.h * .8, shade(pal.wall, .9), '#6e3b2c', 'rgba(255,255,255,.1)');
       return; }
-    case 'tor': prism(o.x, o.y, o.pts, o.h, pal.rock, shade(pal.rock, 1.15), 'rgba(255,255,255,.08)'); return;
+    case 'tor': { const to = prism(o.x, o.y, o.pts, o.h, pal.rock, shade(pal.rock, 1.15), 'rgba(255,255,255,.08)');
+      if (to) paintSurf('rock', () => poly(absPts(o.x, o.y, o.pts, to[0], to[1])), o.x, o.y, .26, .7, 'overlay'); return; }
     case 'post': { // Legion outpost: a squat bunker with a radio whip
       const off = prism(o.x, o.y, o.pts, o.h, '#5c4a40', '#6f625a', 'rgba(255,255,255,.1)', 'rgba(0,0,0,.25)');
       if (SHADOW) return;
