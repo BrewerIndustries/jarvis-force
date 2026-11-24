@@ -81,6 +81,8 @@ supported) and buzz phones that allow `navigator.vibrate`.
   Flame cones lock their aim for each burst, so the lanes between rays stay straight. Lightning strikes one spot on you and two
   beside it, never above or below, so there's always an exit. The beam gets a 1.3s warning. The Overseer's Hive only launches
   drones during the fight and doesn't add fire on top of the boss's.
+  `tools/boss_bot.js` checks this: a dodge bot that reacts every 0.3 s and flies at 260 px/s. On 2026-11-24 it took 0 hits
+  in 71 of 72 Mk III / Ace boss runs. The one hit came from the Overseer's wave walls.
 - **Buildings fly at three altitudes** (`mkTerrain`/`updStructs` in game.js):
   - *Low:* scenery below your altitude. Bullets pass over it.
   - *Legion-held:* red roof roundel. Absorbs your fire and collapses for stars (HP scales with the mission and the threat level).
