@@ -485,7 +485,7 @@ function newRun(level) {
   LV = level; ST = stats(); curSector = LV.s; TM = TIERS[LV.tier || 0]; TH = LV.rush ? NO_THREAT : threat(LV.L, LV.tier || 0, ST);
   P = { x: W / 2, y: H - 160, tx: null, ty: null, vx: 0, r: ST.hitbox, hp: ST.maxHp, shield: ST.shield, shDelay: 0, inv: 1.5,
     bar: ST.barrier > 0, barT: 0,
-    fireT: 0, wingT: 0, misT: 1, lasT: 3, lasOn: 0, droT: .5, flakT: 1.5, wakeT: 0, rev: ST.revives || 0, dead: false, revived: false };
+    fireT: 0, wingT: 0, misT: 1, lasT: 3, lasOn: 0, droT: .5, flakT: 1.5, wakeT: 0, rev: ST.revives || 0, dead: false, revived: false, pw: { spread: 0, over: 0, mag: 0 } };
   run = { stars: 0, baseCollected: 0, baseDropped: 0, kills: 0, total: 0, rescued: 0, damaged: false, bombs: ST.bombs,
     usedBomb: false, combo: 0, comboT: 0, bestCombo: 0, lastKill: -9, endT: 0, failT: 0, failed: false, rescueStars: 0, done: false,
     found: [], newShip: null };
@@ -1475,6 +1475,21 @@ function spawnBoss() {
 }
 
 /* ------------------------------ COMBAT ------------------------------ */
+// ---- mid-mission power-ups: short timed boosts dropped by caches, elites and the odd lucky kill
+const POWER = {
+  spread: { name: 'SPREAD SHOT', c: '#ff9b3d', L: 'S', dur: 10 },
+  over:   { name: 'OVERDRIVE',   c: '#ff4d6d', L: 'O', dur: 8 },
+  mag:    { name: 'MAGNET SURGE', c: '#5ad8ff', L: 'M', dur: 12 },
+};
+function dropPower(x, y, kind) {
+  kind = kind || Object.keys(POWER)[Math.floor(Math.random() * 3)];
+  pickups.push({ kind: 'pw', pw: kind, x, y, vx: rand(-30, 30), vy: -70, t: 0 });
+}
+function gainPower(k) {
+  const d = POWER[k]; P.pw[k] = d.dur; SND.part();
+  texts.push({ x: P.x, y: P.y - 40, s: d.name, c: d.c, t: 1.1, sz: 17 }); buzz(25, .3);
+  run.powers = (run.powers || 0) + 1;
+}
 function addPB(x, y, vx, vy, dmg, r, kind) { pb.push({ x, y, vx, vy, dmg, r, kind, pierce: kind === 'b' ? (ST.pierce || 0) : 0, lastHit: null }); }
 const BULLET = {
   drone: { glow: 'rgba(255,84,48,.42)', body: '#ff6a4a', core: '#fff3d0' },
@@ -1508,6 +1523,7 @@ function killEnemy(e) {
   if (e.type === 'cache') {
     dropStars(e.x, e.y, Math.round((25 + LV.L * 7) * TM.stars) * (LV.rush ? 2 : 1));
     if (Math.random() < .5) pickups.push({ kind: 'hp', x: e.x, y: e.y, vx: rand(-40, 40), vy: -80, t: 0 });
+    dropPower(e.x + 20, e.y);
     texts.push({ x: e.x, y: e.y - 20, s: 'SUPPLY CACHE', c: '#ffd34d', t: 1, sz: 15 });
     return;
   }
@@ -1527,6 +1543,7 @@ function killEnemy(e) {
   run.bestCombo = Math.max(run.bestCombo, run.combo);
   dropStars(e.x, e.y, e.stars);
   if (e.type !== 'scout' && Math.random() < .07) pickups.push({ kind: 'hp', x: e.x, y: e.y, vx: rand(-40, 40), vy: -60, t: 0 });
+  if (!e.boss && !LV.rush && Math.random() < (e.elite ? .3 : e.r >= 30 ? .06 : .012)) dropPower(e.x, e.y);
   if (e.boss) {
     for (let i = 0; i < 6; i++) setTimeout(() => boom(e.x + rand(-60, 60), e.y + rand(-40, 40), 40), i * 140);
     shake = 18; flash = .6; eb = [];
@@ -1739,13 +1756,13 @@ function update(dt) {
   for (const p of pickups) {
     p.t += dt;
     const d = Math.hypot(P.x - p.x, P.y - p.y);
-    const magR = p.kind === 'part' ? Math.max(ST.mag, 170) : ST.mag;
+    const magR = (p.kind === 'part' || p.kind === 'pw' ? Math.max(ST.mag, 170) : ST.mag) * (P.pw.mag > 0 ? 3 : 1);
     if (!P.dead && (d < magR || run.endT > 0) && p.t > .25) {
       const sp = 380 + (magR - Math.min(d, magR)) * 3;
       p.vx += (P.x - p.x) / d * sp * dt * 6; p.vy += (P.y - p.y) / d * sp * dt * 6;
       const m = Math.hypot(p.vx, p.vy), cap = run.endT > 0 ? 900 : 620; if (m > cap) { p.vx *= cap / m; p.vy *= cap / m; }
     } else {
-      p.vx *= Math.pow(.15, dt); p.vy += ((p.kind === 'part' ? 45 : SCROLL + 30) - p.vy) * Math.min(1, dt * 2.2);
+      p.vx *= Math.pow(.15, dt); p.vy += ((p.kind === 'part' || p.kind === 'pw' ? 45 : SCROLL + 30) - p.vy) * Math.min(1, dt * 2.2);
     }
     p.x += p.vx * dt; p.y += p.vy * dt;
     if (!P.dead && d < P.r + 18) {
@@ -1754,6 +1771,7 @@ function update(dt) {
         const val = p.v * ST.fortune * DIFFS[save.diff].stars * comboMult();
         run.stars += val; run.baseCollected += p.v; SND.star(run.combo);
       } else if (p.kind === 'part') { collectPart(p); SND.part(); }
+      else if (p.kind === 'pw') gainPower(p.pw);
       else { SND.heal(); P.hp = Math.min(ST.maxHp, P.hp + 25); texts.push({ x: P.x, y: P.y - 30, s: '+25 HULL', c: '#4cdf8a', t: .8, sz: 15 }); }
     } else if (p.y > H + 30) p.dead = true;
   }
@@ -1793,16 +1811,18 @@ function collectPart(p) {
 }
 
 function fireWeapons(dt) {
+  for (const k in P.pw) if (P.pw[k] > 0) P.pw[k] -= dt;
   if (run.endT > 0) return;
   P.fireT -= dt;
   if (P.fireT <= 0) {
-    P.fireT = ST.fireInt;
+    P.fireT = ST.fireInt * (P.pw.over > 0 ? .55 : 1);
     const n = ST.streams;
     for (let i = 0; i < n; i++) {
       const o = (i - (n - 1) / 2), bx = P.x + o * 11;
       addPB(bx, P.y - 24, o * 40, -950, ST.dmg, 5, 'b');
       parts.push({ kind: 'flash', x: bx, y: P.y - 33, t: .07, max: .07, sz: 24, mz: true });
     }
+    if (P.pw.spread > 0) for (const a of [-.34, -.17, .17, .34]) addPB(P.x, P.y - 22, Math.sin(a) * 950, -Math.cos(a) * 950, ST.dmg * .7, 5, 'b');
     if (Math.random() < .65) { const side = Math.random() < .5 ? 1 : -1; parts.push({ kind: 'debris', x: P.x + side * 9, y: P.y - 6, vx: side * rand(60, 120), vy: rand(-30, 30), t: .55, max: .55, sz: 3, c: '#e8c06a', rot: rand(0, 6), vr: rand(-22, 22), g: 900, drag: .995 }); }
     SND.shot();
     P.wingT ^= 1;
@@ -2568,6 +2588,17 @@ function drawHUD() {
     ctx.fillStyle = 'rgba(255,200,80,.22)'; ctx.fillRect(W / 2 - 50, 72, 100, 3);
     ctx.fillStyle = 'rgba(255,214,120,.85)'; ctx.fillRect(W / 2 - 50, 72, cw, 3);
   }
+  // active power-ups: a chip each with a draining bar
+  let px = 12;
+  for (const k in POWER) if (P.pw && P.pw[k] > 0) {
+    const d = POWER[k], y0 = shield ? 62 : 48;
+    panel(px, y0, 58, 24, 7);
+    ctx.fillStyle = d.c; ctx.font = '800 12px Orbitron, sans-serif'; ctx.textAlign = 'left'; ctx.fillText(d.L, px + 8, y0 + 16);
+    ctx.fillStyle = 'rgba(255,255,255,.15)'; ctx.fillRect(px + 22, y0 + 10, 28, 5);
+    ctx.globalAlpha = P.pw[k] < 2 && Math.floor(gameT * 8) % 2 ? .35 : 1;
+    ctx.fillStyle = d.c; ctx.fillRect(px + 22, y0 + 10, 28 * P.pw[k] / d.dur, 5); ctx.globalAlpha = 1;
+    px += 64;
+  }
   // pause
   panel(W - 52, 12, 40, 40, 9);
   ctx.fillStyle = '#dbe9f7'; ctx.fillRect(W - 40, 22, 5, 20); ctx.fillRect(W - 29, 22, 5, 20);
@@ -2647,6 +2678,16 @@ function render() {
       if (RASTER.part) drawRaster(RASTER.part, p.x, p.y + bob);
       else gear(p.x, p.y + bob, 10, '#bff3ff', p.t * 2);
       ctx.fillStyle = '#bff3ff'; ctx.font = '700 10px Orbitron, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('PART', p.x, p.y + bob + 32);
+    } else if (p.kind === 'pw') {
+      const d = POWER[p.pw], bob = Math.sin(p.t * 6) * 2.5, pul = 1 + Math.sin(p.t * 9) * .08;
+      ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .55;
+      ctx.drawImage(SPR.sun, p.x - 30 * pul, p.y + bob - 30 * pul, 60 * pul, 60 * pul);
+      ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+      ctx.save(); ctx.translate(p.x, p.y + bob); ctx.rotate(Math.sin(p.t * 2) * .2);
+      ctx.beginPath(); for (let i = 0; i < 6; i++) { const a = i / 6 * 6.283 + .52; ctx[i ? 'lineTo' : 'moveTo'](Math.cos(a) * 15, Math.sin(a) * 15); } ctx.closePath();
+      ctx.fillStyle = 'rgba(14,18,28,.9)'; ctx.fill(); ctx.strokeStyle = d.c; ctx.lineWidth = 3; ctx.stroke();
+      ctx.fillStyle = d.c; ctx.font = '900 15px Orbitron, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(d.L, 0, 1);
+      ctx.textBaseline = 'alphabetic'; ctx.restore();
     } else {
       ctx.fillStyle = '#4cdf8a'; ctx.beginPath(); ctx.arc(p.x, p.y, 11, 0, 7); ctx.fill();
       ctx.fillStyle = '#fff'; ctx.fillRect(p.x - 6, p.y - 2, 12, 4); ctx.fillRect(p.x - 2, p.y - 6, 4, 12);
