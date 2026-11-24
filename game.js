@@ -507,6 +507,7 @@ function newRun(level) {
 const BIOMES = ['isles', 'peaks', 'seas', 'sprawl', 'storm', 'core'];
 const LX = .6, LY = .8; // direction the light travels (towards the bottom-right)
 const GRADE = [null, 'rgba(255,160,80,.07)', 'rgba(110,70,190,.09)', 'rgba(8,16,50,.17)']; // dawn / day / dusk / night by mission
+let decals = [], booms2 = []; // scorch marks on the ground (scroll with it) and delayed secondary blasts
 let terrain = [], wx = [], nextY = 0, bgT = 0, bgVar = 0, SHADOW = false;
 const shadeCache = new Map();
 function shade(hex, f) { // f<1 darkens, f>1 lightens toward white
@@ -620,10 +621,18 @@ function drawGroundTex(B) {
 function rasterFor(id) { return RASTER[id] || null; }
 
 let rasterFlash = 0; // set by drawEnemy/drawBoss while the thing being drawn is flashing from a hit
+let rasterBank = 0;  // -1..1 roll: the wing dipping away darkens, the one tipping toward the light brightens
 function drawRaster(r, x, y) {
   if (!r) return false;
   const h = r.h, w = h * (r.img.width / r.img.height);
   ctx.drawImage(SHADOW ? r.shadow : r.img, x - w / 2, y - h / 2, w, h);
+  if (rasterBank && !SHADOW) {
+    const b = clamp(rasterBank, -1, 1), dark = b > 0 ? 1 : -1; // banking right drops the right wing
+    ctx.save(); ctx.beginPath(); ctx.rect(dark > 0 ? x : x - w / 2, y - h / 2, w / 2, h); ctx.clip();
+    ctx.globalAlpha = Math.abs(b) * .42; ctx.drawImage(r.shadow, x - w / 2, y - h / 2, w, h); ctx.restore();
+    ctx.save(); ctx.beginPath(); ctx.rect(dark > 0 ? x - w / 2 : x, y - h / 2, w / 2, h); ctx.clip();
+    ctx.globalAlpha = Math.abs(b) * .16; ctx.drawImage(r.white, x - w / 2, y - h / 2, w, h); ctx.restore();
+  }
   if (rasterFlash > 0 && !SHADOW) { const a = ctx.globalAlpha; ctx.globalAlpha = a * Math.min(1, rasterFlash * 12); ctx.drawImage(r.white, x - w / 2, y - h / 2, w, h); ctx.globalAlpha = a; }
   return true;
 }
@@ -742,7 +751,8 @@ function solidAt(x, y, r) {
 function hurtStruct(o, d) {
   o.hp -= d; o.flash = .12;
   if (o.hp > 0) return;
-  o.dead = true; boom(o.rx, o.ry, 34); SND.crumble(sndPan(o.rx)); shake = Math.max(shake, 2.5);
+  o.dead = true; boom(o.rx, o.ry, 34); scorch(o.rx, o.ry, 46);
+  booms2.push({ x: o.rx + rand(-18, 18), y: o.ry + rand(-14, 14), r: 20, t: .22 }); SND.crumble(sndPan(o.rx)); shake = Math.max(shake, 2.5);
   dropStars(o.rx, o.ry, Math.round((4 + LV.L * .6) * TM.stars));
   run.structs = (run.structs || 0) + 1;
 }
@@ -776,7 +786,7 @@ function drawRubble(o, pal) {
 }
 
 function seedBg() {
-  terrain = []; clouds = []; wx = [];
+  terrain = []; clouds = []; wx = []; decals = []; booms2 = [];
   bgVar = LV && !LV.rush ? LV.L % LEVELS_PER : 0;
   nextY = H + 220;
   while (nextY > -300) { const o = mkTerrain(nextY); terrain.push(o); nextY -= o.gap; }
@@ -789,6 +799,10 @@ function updBg(dt) {
   bgT += dt; bgScroll += SCROLL * dt; nextY += SCROLL * dt;
   for (const o of terrain) o.y += SCROLL * dt;
   terrain = terrain.filter(o => o.y - o.ext < H + 80);
+  for (const d of decals) { d.y += SCROLL * dt; d.t += dt; }
+  if (decals.length && decals[0].y > H + 80) decals = decals.filter(d => d.y < H + 80);
+  for (const b of booms2) if ((b.t -= dt) <= 0) { boom(b.x, b.y, b.r); SND.boom(b.r, sndPan(b.x)); }
+  if (booms2.length) booms2 = booms2.filter(b => b.t > 0);
   let added = false;
   while (nextY > -300) { const o = mkTerrain(nextY); terrain.push(o); nextY -= o.gap; added = true; }
   if (added) terrain.sort((a, b) => (a.layer || 1) - (b.layer || 1));
@@ -1209,8 +1223,29 @@ function drawWaves(S, tex) {
 function drawBg() {
   const S = SECTORS[curSector];
   drawGround(S);
+  drawDecals();
   shadowPass(() => { for (const o of terrain) drawTerrainObj(o, S); }, 0, 0, .3);
   for (const o of terrain) if (o.beh !== 'tall') drawTerrainObj(o, S);
+}
+function scorch(x, y, r) {
+  const pts = []; for (let i = 0; i < 9; i++) pts.push(r * rand(.7, 1.15));
+  decals.push({ x, y, r, pts, rot: rand(0, 7), t: 0 });
+  if (decals.length > 40) decals.shift();
+}
+function drawDecals() {
+  for (const d of decals) {
+    ctx.save(); ctx.translate(d.x, d.y); ctx.rotate(d.rot);
+    ctx.fillStyle = 'rgba(18,12,8,.42)'; ctx.beginPath();
+    d.pts.forEach((q, i) => { const a = i / d.pts.length * 6.283; ctx[i ? 'lineTo' : 'moveTo'](Math.cos(a) * q, Math.sin(a) * q * .8); });
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(10,6,4,.35)'; ctx.beginPath(); ctx.ellipse(0, 0, d.r * .5, d.r * .4, 0, 0, 7); ctx.fill();
+    if (d.t < 1.6) { // embers cooling off
+      ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = (1 - d.t / 1.6) * .7;
+      ctx.drawImage(SPR.fire, -d.r * .45, -d.r * .45, d.r * .9, d.r * .9);
+      ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+  }
 }
 function drawTowers() { for (const o of terrain) if (o.beh === 'tall') drawTower(o); }
 
@@ -1465,6 +1500,9 @@ function hurtEnemy(e, d, silent) {
 function killEnemy(e) {
   e.dead = true;
   boom(e.x, e.y, e.r);
+  if (!e.boss && e.y > 0 && e.y < H) scorch(e.x, e.y + (GROUNDED.has(e.type) ? 0 : 40), e.r * (GROUNDED.has(e.type) ? 1.3 : .8)); // wreck hits the deck
+  if (e.r >= 30) for (let i = 0; i < (e.boss ? 6 : 2); i++)
+    booms2.push({ x: e.x + rand(-e.r, e.r) * .7, y: e.y + rand(-e.r, e.r) * .6, r: e.r * rand(.35, .55), t: .12 + i * (e.boss ? .16 : .14) });
   if (e.boss) SND.bigBoom(sndPan(e.x)); else if (e.type === 'cache') SND.cache(); else SND.boom(e.r, sndPan(e.x));
   if (e.boss) { stopFor(.28); buzz([70, 50, 160], 1); } else if (e.r >= 40 || e.elite) { stopFor(.045); buzz(18, .4); }
   if (e.type === 'cache') {
@@ -1626,6 +1664,9 @@ function update(dt) {
     }
     P.x = clamp(P.x, XL + 20, XR - 20); P.y = clamp(P.y, 60, H - 40);
     P.vx = (P.x - ox) / Math.max(dt, 1e-3);
+    P.vy = (P.vy || 0) * .7 + ((P.y - (P.ly ?? P.y)) / Math.max(dt, 1e-3)) * .3; P.ly = P.y;
+    if (Math.abs(P.vx) > 520 && Math.random() < .7) for (const sx of [-1, 1]) // wingtip vapour on hard turns
+      parts.push({ x: P.x + sx * 30, y: P.y + 10, vx: 0, vy: 60, t: .28, max: .28, c: 'rgba(235,245,255,.55)', sz: 1.6 });
     P.moving = !!(kx || ky || P.tx != null);
     if (P.moving && (BIOMES[curSector] === 'isles' || BIOMES[curSector] === 'seas')) { // wake on open water
       if ((P.wakeT -= dt) <= 0) { P.wakeT = .06; parts.push({ kind: 'wake', x: P.x + rand(-7, 7), y: P.y + 20, vx: rand(-6, 6), vy: 30, t: .85, max: .85, sz: rand(5, 9), grow: 30, drag: .99 }); }
@@ -1802,6 +1843,8 @@ function dronePos() {
 
 function updEnemy(e, dt) {
   e.t += dt; if (e.flash > 0) e.flash -= dt;
+  if (e.lx != null) e.bvx = (e.bvx || 0) * .85 + ((e.x - e.lx) / Math.max(dt, 1e-3)) * .15; // for banking
+  e.lx = e.x;
   if (e.maxHp && e.hp < e.maxHp * .45) { // hurt machines trail smoke, then sparks
     if (Math.random() < dt * 7) parts.push({ kind: 'smoke', x: e.x + rand(-e.r * .5, e.r * .5), y: e.y + rand(-e.r * .3, e.r * .4), vx: rand(-12, 12), vy: rand(-18, 6), t: .75, max: .75, sz: rand(5, 10), grow: 16, drag: .95 });
     if (e.hp < e.maxHp * .2 && Math.random() < dt * 9) parts.push({ kind: 'ember', x: e.x + rand(-e.r * .4, e.r * .4), y: e.y, vx: rand(-20, 20), vy: rand(-30, 10), t: .5, max: .5, sz: 1.8, c: '#ffb347', g: 120, drag: .97 });
@@ -2085,11 +2128,12 @@ function drawPlayerShip(x, y, tilt, scale = 1, id = save.ship) {
   ctx.save(); ctx.translate(x, y); ctx.scale(scale * (1 - Math.abs(tilt) * .25), scale);
   if (ras) { // rendered hero art; engines are still drawn live on top
     if (SHADOW) { drawRaster(ras, 0, 0); ctx.restore(); return; }
-    const fl0 = 15 + Math.random() * 11;
+    const boost = P && x === P.x && P.vy < -60 ? 1.45 : 1; // climbing hard: afterburner
+    const fl0 = (15 + Math.random() * 11) * boost;
     ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .55;
-    ctx.drawImage(SPR.fire, -13, ras.h * .3, 26, 20 + fl0 * .5);
+    ctx.drawImage(SPR.fire, -13 * boost, ras.h * .3, 26 * boost, 20 + fl0 * .5);
     ctx.globalCompositeOperation = 'source-over'; ctx.globalAlpha = 1;
-    drawRaster(ras, 0, 0);
+    rasterBank = tilt; drawRaster(ras, 0, 0); rasterBank = 0;
     ctx.restore(); return;
   }
   if (SHADOW) { ctx.drawImage(art.shadow, -art.size / 2, -art.size / 2, art.size, art.size); ctx.restore(); return; }
@@ -2130,9 +2174,32 @@ function bodyGrad(r, c) {
 }
 function hex(r) { ctx.beginPath(); for (let i = 0; i < 6; i++) ctx.lineTo(Math.cos(i * Math.PI / 3) * r, Math.sin(i * Math.PI / 3) * r); ctx.closePath(); }
 
+const GROUNDED = new Set(['turret', 'tank', 'hive', 'ground', 'cache', 'salvage', 'carrier']);
+const BANKS = new Set(['scout', 'fighter', 'gunship', 'diver', 'bomber', 'sniper', 'splitter', 'mini', 'heli', 'lifter']);
+const JETS = { scout: [[0, -.38, 10]], diver: [[0, -.4, 10]], fighter: [[-.16, -.4, 10], [.16, -.4, 10]], gunship: [[-.2, -.42, 13], [.2, -.42, 13]], bomber: [[-.22, -.42, 14], [.22, -.42, 14]], sniper: [[0, -.4, 9]] };
 function drawEnemy(e) {
   rasterFlash = e.flash > 0 ? e.flash : 0;
-  try { drawEnemy0(e); } finally { rasterFlash = 0; }
+  const bank = BANKS.has(e.type) && !SHADOW ? clamp((e.bvx || 0) / 700, -.7, .7) : 0;
+  const r = RASTER[e.type === 'mini' ? 'splitter' : e.type];
+  if (r && !SHADOW && JETS[e.type]) { // engine flames behind rendered jets (they fly nose-down, so engines face up)
+    ctx.save(); ctx.translate(e.x, e.y); ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .5;
+    for (const [jx, jy, sz] of JETS[e.type]) { const f = sz * (1.6 + Math.random() * .7); ctx.drawImage(SPR.fire, jx * r.h - sz * .5, jy * r.h - f, sz, f); }
+    ctx.restore();
+  }
+  rasterBank = bank;
+  try { drawEnemy0(e); } finally { rasterFlash = 0; rasterBank = 0; }
+  if (r && !SHADOW && (e.type === 'heli' || e.type === 'lifter')) { // rotor blur over the rendered body
+    const ra = gameT * 30 + e.x0, R = e.type === 'lifter' ? r.h * .42 : r.h * .48;
+    const hubs = e.type === 'lifter' ? [[0, -r.h * .3], [0, r.h * .3]] : [[0, -r.h * .02]];
+    ctx.save(); ctx.translate(e.x, e.y);
+    for (const [hx, hy] of hubs) {
+      ctx.fillStyle = 'rgba(20,24,30,.12)'; ctx.beginPath(); ctx.arc(hx, hy, R, 0, 7); ctx.fill();
+      ctx.strokeStyle = 'rgba(30,34,40,.38)'; ctx.lineWidth = 2.5; ctx.beginPath();
+      for (const k of [0, Math.PI / 2]) { const a = ra + k + hy; ctx.moveTo(hx + Math.cos(a) * R, hy + Math.sin(a) * R); ctx.lineTo(hx - Math.cos(a) * R, hy - Math.sin(a) * R); }
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
 }
 function drawEnemy0(e) {
   const S = SECTORS[LV ? LV.s : 0], col = e.flash > 0 ? '#fff' : bodyGrad(e.r, S.enemy);
