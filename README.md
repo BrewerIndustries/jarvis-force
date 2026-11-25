@@ -5,7 +5,10 @@ A vertical-scrolling shoot-'em-up with a star-economy upgrade loop. It's an orig
 **Story:** Six years after the Collapse, the old defense network has gone rogue as the **Rust Legion**. Jarvis has taken
 command of what's left of the air force. He builds the jets, runs the hangar and upgrades, and plans every
 sortie, but he can't fly (eleven million simulations, eleven million lakes). You are the human pilot. Rescue
-survivors, bring stars home, and push through five sectors to the **Overseer Core**.
+survivors, bring stars home, and push through six sectors to the **Overseer Core**.
+
+The full plot, cast and twist are in [STORY.md](STORY.md); the script is in `story.js`. In short: the Overseer and
+Jarvis were once one mind, TWINLIGHT, and Jarvis can't fly because his brother kept the flight core.
 
 ## Live
 
@@ -26,15 +29,26 @@ python3 -m http.server 4905
 Then open http://localhost:4905. From the umbrella folder's `.claude/launch.json` it's the `jarvis-force` preview.
 
 **Controls:** mouse, or drag anywhere on touch (the ship moves relative to your finger) · WASD/arrows ·
-Space/B or the EMP button = EMP charge · P/Esc or the ⏸ button = pause. The ship fires automatically. Only the white dot at the centre of the ship takes hits.
+Space/B or the EMP button = EMP charge · E/Q/Shift or the ring button above EMP = ship ability · P/Esc or the ⏸ button = pause.
+Holding a key fires once (key auto-repeat is ignored, so a held Space can't dump every EMP). The HUD buttons carry a keycap
+label for the last input device used (SPACE / E on keys, A / X on a pad, none on touch), and How to Play lists the controls.
+The ship fires automatically. Only the white dot at the centre of the ship takes hits.
+
+**Game controllers** (Gamepad API, any standard pad): left stick or d-pad flies; A or RB = EMP; X or LB = ship ability;
+Start = pause. In menus the stick or d-pad moves a gold focus ring and A presses. Hits rumble the pad (dual-rumble where
+supported) and buzz phones that allow `navigator.vibrate`.
 
 ## Content
 
-- **20 missions** across 5 sectors, each with its own terrain (`BIOMES` in game.js):
+- **24 missions** across 6 sectors, each with its own terrain (`BIOMES` in game.js):
   - Drowned Coast: islands, shallows and drowned tower blocks
   - Ashen Peaks: faceted mountains, volcanoes and lava rivers
   - Frozen Relay: a stormy sea with rolling swell, ice floes, icebergs and radio rigs
   - Overgrown Sprawl: city blocks with overgrown rooftops
+  - Stormfront: rain-lashed moorland with patchwork fields, flooded pools, wind turbines and lattice masts.
+    Dark cloud banks drift over the fight and hide any drone flying beneath them (their bullets stay visible).
+    Rain hazes the ground, so tanks and turrets are hard to spot, and survivors and salvage crates burn flares
+    so you can still find them. Lightning flashes light up the moor for a moment and are drawn to the masts.
   - Overseer Core: machine plating, conduits, data cylinders and vents
 
   Wave height, volcano count and building height grow through each sector, and each mission in a sector has its own
@@ -43,15 +57,17 @@ Space/B or the EMP button = EMP charge · P/Esc or the ⏸ button = pause. The s
 - **3 tiers per mission (Mk I / Mk II / Mk III).** Earn every medal on a tier to unlock the next one. It's the same
   mission (same seed) with extra seeded waves layered on, plus tougher drones, heavier and faster fire, and more damage
   (`TIERS` in game.js), with bigger star and medal payouts. Each tier adds a medal: Mk II = *No EMP used*,
-  Mk III = *30-kill chain*. That's 5 + 6 + 7 = 18 medals per mission, 360 in all. The tier picker opens from the
+  Mk III = *30-kill chain*. The chain window grows with the tier (1.6 s / 2.2 s / 2.8 s, `CHAIN_WIN`) so a 30-chain
+  stays possible against Mk III hulls; the end-of-mission chain bonus is capped at 60 links. That's 5 + 6 + 7 = 18 medals per mission, 432 in all. The tier picker opens from the
   mission board once a mission has anything past Mk I to show.
-- **Fleet of 8 ships.** Ember is the starter. The other 7 (Kestrel, Lifeline, Bulwark, Tempest, Aegis, Phantom, Sovereign)
+- **Fleet of 9 ships**, on its own Fleet screen (the Hangar is upgrades only). Ember is the starter. The other 8 (Kestrel, Lifeline, Bulwark, Tempest, Stormcrow, Aegis, Phantom, Sovereign)
   are each assembled from 4 parts (Wings, Engine, Cockpit, Reactor) found in blue **salvage crates**. Each part lives on one
-  mission and tier (`PART_SPOTS`). Sectors 1–5 Mk I hold Kestrel → Aegis, Mk II holds Phantom and Mk III holds Sovereign.
+  mission and tier (`PART_SPOTS`). Sectors 1–6 Mk I hold Kestrel → Aegis, Mk II holds Phantom and Mk III holds Sovereign.
   Missions with a part still to find show 🔩. Every ship has trade-offs (`SHIPS[].mods`): hull, shield, speed, fire rate,
   damage, rescue speed, magnet, star value, hitbox, recovery time, and a **First Strike barrier** that blocks one hit and
   restores itself. Upgrades apply to every ship. Parts are saved the moment you pick them up.
-- **14 enemy types**, including the **Hive** (a carrier that launches drones until destroyed, and retreats when the boss
+- **16 enemy types**, including **attack helicopters** (they hover on station, sidestep and fire 3-round bursts, then pull out),
+  twin-rotor **lifters** that set two turrets down on the ground as they pass, the **Hive** (a carrier that launches drones until destroyed, and retreats when the boss
   arrives), mines that arm near you and burst, snipers with a telegraphed aim line, splitters that break into
   three, and patrolling ground tanks.
 - **Unique sector bosses** (`BOSSES`), each with its own silhouette and attack set:
@@ -59,10 +75,56 @@ Space/B or the EMP button = EMP charge · P/Esc or the ⏸ button = pause. The s
   - Cinder Colossus (flame cone, mine drops)
   - Glacier Maw (splitting ice shards, telegraphed beam)
   - Thornwarden (rotating cross, summons splitters)
+  - Thunderhead (a storm cell with an anemometer crown; calls down telegraphed lightning strikes, three at a time)
   - Overseer (3 phases, with a Hive at phase 2)
 
   Each sector's vanguard mini-boss uses a subset of its boss's attacks.
-- **5 Star Rush bonus stages** (one per sector, unlocked by beating its boss). No enemy fire, stars everywhere.
+
+  **Every boss can be beaten without taking a hit.** Each attack is built from fixed geometry with a guaranteed way through.
+  Rings and fans keep more than 24px between bullets (hitbox plus bullet on both sides) from about 200px out. Wall gaps only
+  shift one lane per wall. The falling rain has an open stretch that drifts slower than the ship and opens where you are.
+  Flame cones lock their aim for each burst, so the lanes between rays stay straight. Lightning strikes one spot on you and two
+  beside it, never above or below, so there's always an exit. The beam gets a 1.3s warning. The Overseer's Hive only launches
+  drones during the fight and doesn't add fire on top of the boss's.
+  `tools/boss_bot.js` checks this: a dodge bot that reacts every 0.3 s and flies at 260 px/s. On 2026-11-24 it took 0 hits
+  in 71 of 72 Mk III / Ace boss runs. The one hit came from the Overseer's wave walls.
+
+  **Multi-part bosses** (`BOSS_PARTS`, `mkBossParts`, `updPart`, `drawPart`). Every boss carries destructible hardware with
+  its own attack, and the core is armoured (takes 25% damage) until all of it is gone. Then CORE EXPOSED: its aimed and
+  ring attacks (fan, shards, radial, bolts) come 18% faster.
+  - Tidebreaker: two wing pods (twin cannon)
+  - Cinder Colossus: two furnace stacks (mortar) and a chin gun
+  - Glacier Maw: two jaws (drop: a short column straight down)
+  - Thornwarden: two vine pods and a seed launcher
+  - Thunderhead: two capacitors (lance: a red aim line locks, then one fast round) and an arc node
+  - Overseer: two guard nodes and two lenses
+
+  Vanguards carry the first two parts of their sector boss. Each part is about 13–20% of the core's HP and shows a health
+  ring and a magenta power cell (the colour of boss fire). The boss plate shows ARMOURED/EXPOSED and one pip per part.
+  The no-hit rule shapes when parts may fire. Parts fire:
+  - in the gap between the core's volleys in a sparse pattern (fan, shards, bolts);
+  - late in a rest.
+
+  Parts never fire during a ring, spiral, cross, wall, rain or cone, or in the rest before or after a pattern that boxes you
+  in (walls, rain, beam, divers, mines, splitters). Their rounds must also have cleared before such a pattern starts. Parts
+  take turns, never two in one beat. Rain and wave walls now get a longer rest (2.3 s and 1.8 s) so their lanes clear first:
+  rain into the flame cone used to trap you. The Overseer's phase-2 beam no longer follows straight after its walls.
+  Bot check 2026-11-24 (`BOT(L, 2, 45, hpFrac, { react: .3, spd: 260, parts: 'live' | 'dead' })`, Mk III / Ace):
+  - Major bosses at 80/40/25% HP, with parts alive and with parts stripped: 142 of 144 runs took 0 hits. The two hits
+    were the Overseer's wave walls, the same rare miss as before.
+  - Vanguards: 72 of 72 runs took 0 hits.
+- **Buildings fly at three altitudes** (`mkTerrain`/`updStructs` in game.js):
+  - *Low:* scenery below your altitude. Bullets pass over it.
+  - *Legion-held:* red roof roundel. Absorbs your fire and collapses for stars (HP scales with the mission and the threat level).
+  - *Towers:* very tall, with a yellow hazard edge and a blinking red beacon. They are indestructible and block shots both ways,
+    so they work as cover. Clipping one costs hull and shoves you aside. Towers stop spawning about 22s before the boss, so
+    boss arenas stay clear, and any tower still on screen stops blocking shots the moment the boss arrives.
+
+  Every sector has buildings: drowned tower blocks, Legion outposts in the peaks, sea rigs, city blocks, moorland farms and Core blocks.
+- **6 Star Rush bonus stages** (one per sector, unlocked by beating its boss). No enemy fire, stars everywhere.
+- **A classified bay** opens once every ordinary upgrade is maxed: five one-time secret fits (Overclock, Aegis Prime,
+  Graviton Coil, Phoenix Core, Railgun) at 30,000-80,000 stars. The section only renders when the hangar is complete, and
+  a toast marks the unlock.
 - **20 upgrades** in Jarvis's hangar: Pulse Cannon, Autoloader, Wing Guns, Seeker Missiles, Arc Lance (beam),
   Wingman Drones, Hull Plating, Deflector shield, Repair Nanites, EMP Charges, Star Magnet, Salvage Scanner
   (+star value), Targeting Core (crits), Thrusters (speed), Reactive Armour (damage reduction), Flak Pods (shrapnel ring),
@@ -72,7 +134,65 @@ Space/B or the EMP button = EMP charge · P/Esc or the ⏸ button = pause. The s
   (^0.55). Gold-ringed **elite** drones (×1.9 HP, faster fire, ×2 stars) get more common by sector, by tier and when you're over-built.
   A toast and the tier sheet show the threat multiplier when it's high.
 - **3 difficulties**: Cadet (default, gentle) / Pilot (+30% stars) / Ace (+70% stars).
-- **27 Commendations** (one-time star rewards) and a **daily check-in** streak.
+- **28 Commendations** (one-time star rewards) and a **daily check-in** streak.
+
+### Story delivery (`story.js`, radio engine in game.js)
+- **Cast** (`CAST`): Jarvis, Mags, Pip, Wren, Boone, the Overseer, Legion Net, Drone 4471, Dr. Osei and the six
+  bosses, each with a colour and a portrait (`sprites/pt_*.jpg`, made by `tools/gen_portraits.py`; bosses reuse
+  their sprites).
+- **Scenes** (`STORY`): intro, five sector briefings, five after-boss scenes, the ending and an epilogue. Portraits,
+  a Skip button, and Enter/Space to advance.
+- **In-flight radio** (`say`, `chatter`, `bossSay`, `updRadio`, `drawRadio`): a box in the bottom-left that never
+  pauses play, types its text out, and fades to 22% while the jet flies under it. A mission's timed script
+  (`MISSION_STORY[L].radio`) plays until the mission is first cleared. Sector bosses speak on entry, first part
+  lost, core exposed and death (vanguards only taunt on entry). The cast reacts to rescues, EMPs, hives, 30-chains,
+  low hull and finds (`CHATTER`), rate-limited and only once that character has joined (`castJoined`).
+- **Debriefs**: the first clear of each mission swaps the results quip for a cast line. Quip lines carry their
+  speaker (`setQuip`, CSS `attr(data-who)`); menu and hangar quips mix in joined cast (`CAST_QUIPS`).
+- **Legion data cores** (`INTEL`, `INTEL_AT`): 12 purple-ringed salvage crates on missions 2 and 3 of each sector,
+  until recovered; a 💾 on the mission card marks one still out there. "Archivist" pays 2,500★ for all 12.
+- **Transmissions** (main menu): replay unlocked scenes, every cleared mission's radio log, and the data cores
+  (encrypted until found).
+
+### Mission types (`MODES` / `MODE_OF` in game.js)
+Most non-boss missions carry a twist; 1-1, 2-3 and 4-2 stay plain, and boss missions are never changed.
+The mission board labels each one.
+- **Escort** (1-2, 3-1, 5-2, 6-3): three convoy trucks (landing craft over water) drive up the screen with you. Some
+  drones aim at them, and diver flights dive at them. Lose all three and the mission fails. Every truck delivered pays a bonus.
+- **Defend** (2-2, 4-1, 5-3): a survivor camp rolls in, the world stops scrolling (`SCROLL` eases to 0) and you hold
+  for 30 s against waves sent at the camp, then an airlift pays out. If the camp falls, the mission fails.
+- **Evacuation** (1-3, 3-3, 5-1, 6-2): three extra survivors, each holding position under a flare that burns for 13 s (a
+  ring timer). Rescue at least half or the mission fails. It fails as soon as that can no longer happen.
+- **Night raid** (2-1, 3-2, 4-3, 6-1): the screen is dark apart from your searchlight cone, a pool of light around the
+  jet, muzzle glow on each drone, fire and explosions, and tower searchlights. Enemy bullets are drawn above the
+  darkness, so they are always visible.
+
+  Only fire aimed at the convoy or camp can damage it (bullets aimed at your jet pass over the ground), along with divers that
+  dive into it. Each hit does a flat amount, and convoy/camp health grows 45% per sector, because enemy fire scales by
+  sector and threat level. Tuned with a bot that fights the attackers first: Mk I passes on Pilot and Ace in every sector,
+  with 10–40% left in sectors 5–6.
+
+### Ship abilities (`ABIL` in game.js)
+Each airframe has one ability on a cooldown. The ring button fills as it charges.
+Ember: Afterburn Volley (4 s overdrive) · Kestrel: Dash (170 px sidestep, brief invulnerability) · Lifeline: Tractor
+Beam (pulls in everything, +15% hull) · Bulwark: Shield Dome (eats enemy fire for 4 s) · Tempest: Salvo (10 seeking
+rockets) · Aegis: Barrier Pulse (clears enemy fire, restores First Strike) · Stormcrow: Chain Lightning (8 drones) ·
+Phantom: Cloak (3 s untouchable) · Sovereign: Command Strike (screen-wide airstrike). The Fleet screen lists each ship's ability.
+
+### Power-ups (`POWER`)
+Timed capsules: **S**pread shot (10 s, four extra angled rounds), **O**verdrive (8 s, fire interval ×0.55) and
+**M**agnet surge (12 s, triple pickup range). Every supply cache drops one, elites drop one 30% of the time, big
+drones 6% and ordinary drones 1.2%. Active ones show as chips with draining bars under the hull bar.
+
+### Mission ranks
+Each cleared mission gets a rank, scored out of 100 (`missionRank`):
+- Targets: 25
+- Rescues: 15
+- Hull: 30, minus 10 per hit
+- Chain: 15 (a 30-kill chain scores in full)
+- Speed: 15, based on time past the scripted run. Full marks up to 30 s, zero at 100 s.
+
+S ≥ 90, A ≥ 75, B ≥ 55, otherwise C. The best rank per tier is saved (`save.lv[L].rk`), and the mission board shows the best one in the corner of each tile.
 
 ### Ways to earn stars
 Drone kills · kill-chain multiplier (up to ×3, plus an end-of-mission chain bonus) · survivor rescues ·
@@ -85,19 +205,133 @@ Tiny hitbox, slower bullets, a recharging shield that blocks the "no damage" pen
 an auto-revive upgrade, and the stars-kept-on-death rule.
 
 ### Rendering
-Everything is procedural Canvas 2D with a pseudo-3D look:
+**Performance (2026-11-24).** The game had dropped to about 30 fps, and slowed further as the screen filled. Chrome keeps
+canvases smaller than about 256×256 in CPU memory and re-uploads them to the GPU on every `drawImage`, roughly 0.3 ms per
+stamp. Every glow, flame and smoke puff, every sprite shadow and every hit-flash silhouette was one of those. The fixes:
+- `promote()` swaps each baked sprite canvas for an `<img>` of itself once it decodes.
+- The colour grade (haze, sun wash, time-of-day tint, vignette) is baked once per sector and time of day.
+- Storm cloud banks are painted once (plain and lightning-lit) and cross-faded.
+- Bloom runs at quarter resolution inside a GPU-sized buffer.
+- Terrain surface textures fill the face path instead of clip + 8000 px rect.
+- Waves share one gradient.
+
+Headless Chrome on the dev Mac: 60 fps steady in every sector and in boss fights with 80+ bullets (16.7 ms frames), against
+27–40 fps (33–50 ms frames) for build 30.
+
+The ground textures also had a hard vertical seam about 22% across. The horizontal cross-fade in `tools/tile_ground.py` and
+`tools/gen_props.py` ran backwards (a stray `FLIP_LEFT_RIGHT`); it is fixed and every texture rebuilt.
+
+Canvas 2D with a pseudo-3D look; ships, units, bosses, pickups and the ground are rendered art over procedural fallbacks:
 - Terrain prisms (`prism()`) lean away from the screen centre as they scroll past, and walls are shaded from a top-left light.
-- Shadows for terrain, jets and bosses are drawn into one black offscreen layer (`shadowPass()`) and composited once.
-- Ships and drones use gradient body shading.
+- Shadows for terrain, jets and bosses are drawn into one black offscreen layer (`shadowPass()`) at half resolution and
+  upscaled when composited, so contact shadows read as penumbra rather than hard black shapes (and it is cheaper).
+- Ships and drones use gradient body shading. The jet is painted once into a 2x canvas (`shipArt()`: hull lighting,
+  panel seams, rivets, wing stripes, nozzle metal, canopy gradient and specular) and then stamped, with a black
+  silhouette of the same bake feeding the shadow layer. Animated parts stay live: afterburner bloom and flame,
+  blinking port/starboard nav lights. Fighters and gunships get a rim light, a canopy and engine glow.
+- Bosses carry battle damage as their hull fails: scorch patches past 28%, smoke past 50%, open fire past 78%,
+  plus a thruster wash under the hull. The HUD is drawn on glass panels (`panel()`) with a segmented hull readout,
+  a glowing star counter and a boss plate with a bright leading edge. Stars on the field carry a warm bloom.
+- **Rendered sprite art** for every ship in the fleet (all nine liveries), every Legion unit, all six bosses (the
+  vanguard variant reuses its sector boss art, scaled to its radius), and the pickups: survivor raft, supply cache,
+  salvage crate and ship part.
+- **Rendered sprite art** for the hero jet and every Legion unit: scout, fighter, gunship, helicopter, diver, sniper,
+  splitter (mini reuses it at half size), bomber, lifter, carrier, hive, mine, turret and tank.
+  `tools/key_sprites.py` keys the generated art off its magenta backdrop (a magenta-ness key with despill, not a
+  colour match, so dark hulls and the helicopter's blurred rotor do not fringe purple), trims it, normalises it to
+  2x the in-game size and writes `sprites/<id>.png`. `game.js` loads them at boot and falls back to the procedural
+  art when a file is missing, so the site never depends on the images. Enemy sprites are hue-rotated per sector and
+  cached, which keeps the Legion's per-sector colour identity.
+- **Rendered ground:** each sector biome has one seamlessly tiling ground texture (`sprites/ground_<biome>.jpg`,
+  1344px = 2x a 672px logical tile that covers the panned world). `tools/gen_ground.py` asks the image model for a
+  top-down tileable texture per biome (writes `art-src/ground_<biome>.webp`; reads the OpenRouter key from
+  `~/.config/openrouter.env` at run time), and `tools/tile_ground.py` makes it truly seamless (each edge cross-faded
+  with the band past the opposite edge), tones it down under the sprites and writes the JPEG. `drawGroundTex()` draws
+  it in world space keyed to `bgScroll`, so it moves with the terrain and never pops: two or three `drawImage` calls a
+  frame, no gradients. It replaces only the flat base: the sea swell is still drawn on top (wave faces go translucent
+  so the ice shows through; crests, whitecaps and foam are unchanged), the Sprawl roads become worn lanes, the Core
+  conduits still pulse, and grades, distance haze, storm rain haze and cloud banks all sit over it as before.
+  Procedural extras the texture already carries (ash cracks, moss, moorland fields, the Core grid) are skipped. If a
+  file is missing or fails to load, the procedural ground is drawn exactly as before. Buildings and props stay
+  procedural prisms.
+- Buildings are prisms with windows mapped onto their visible walls (`wallWindows()`): each wall is a quad, so a
+  window is a small quad interpolated between its base edge and the leaned top edge. City blocks and Legion towers
+  use it; sea rigs get cross-braced legs, a reflection and a helipad (skipped on Legion-held rigs, which carry the
+  roundel instead).
+- Distance haze: each sector tints the top of the screen so the far edge sits under atmosphere while the near edge
+  stays crisp, and a diagonal light overlay warms the top-left and cools the bottom-right.
+- Sea rows key their height, phase and foam to the **world** row (`base - r`), not the screen row: keying to the
+  screen row re-hashed every row as the sea scrolled, which made the whole wave field pop every 46px.
+- Open water gets a specular sun path of drifting dashes in addition to the crest highlights.
+- **Bloom:** the bright parts of the frame (flashes, explosions, engine glow, sun glitter) go through a quarter-size
+  contrast-and-blur pass and are added back, so lit things bleed light without washing out the sea. Composited
+  before the HUD, and skipped on any browser whose canvas has no `filter`.
+- **Explosions** (`boom()`) are layered on separate clocks: a white flash, a fireball that cools from yellow to red,
+  tumbling shrapnel with gravity, embers, a flat shockwave, and smoke that billows up as the fire dies. Fire and smoke
+  are pre-rendered sprites stamped per particle, so no radial gradients are built per frame. Counts drop when the
+  screen is already busy.
+- **Gunfire** shows a muzzle flash at each barrel and a tumbling brass casing, and player rounds are tracers with a hot
+  core and a soft aura. Enemy rounds carry short trails, sniper rounds a long tracer, and missiles a flame and smoke
+  trail. Bullet impacts add a pinpoint flash.
+- Damaged machines trail smoke below 45% hull and throw embers below 20%.
+- On water the jet leaves a wake and casts a blurred, flattened reflection, islands have breathing surf rings and a
+  shaded far slope (lit plateau, shadowed side away from the sun), and ice floes carry cracks, a bright top rim and a
+  reflection in the swell. The northern sea's wave rows each get their own height, phase and foam streaks instead of
+  reading as stripes.
+- **Side-scrolling camera:** the world is 64px wider than the screen on each side (`PAN`, `XL`/`XR` in game.js).
+  The camera eases after the ship, so steering toward an edge pans the view and reveals extra room. Waves are
+  stretched across the wider world (`widen()`), and clouds slide slightly faster than the ground for parallax.
 - Each biome adds weather (embers, snow, pollen or data motes), and the world sits under a vignette.
+
+### Feel and effects (added 2026-11-23)
+- Player tracer rounds were slimmed on 2026-11-24 (glow 7×16, core 2.6×14, was 12×26 / 4.4×22) so your own fire stops
+  burying the screen. Visual size only: hit radius and damage are unchanged.
+- **Hit feel:** a short hit-stop on big kills, boss kills and when you take damage, plus a white silhouette flash on
+  rendered sprites (`rasterFlash`) and controller rumble.
+- **Explosions:** big kills set off delayed secondary blasts (`booms2`). Wrecks leave scorch marks (`decals`, capped at 40) that sit on the
+  ground, scroll with it and cool from glowing embers.
+- **Motion:** rendered jets and drones bank with their sideways speed and shade the dipping wing (`rasterBank`).
+  Jet drones show engine flames, helicopters and lifters show rotor blur, and the player's jet throws wingtip vapour on hard turns and lights its afterburner when climbing.
+- **Boss entrances:** letterbox, a red siren strip, a sliding name card, slow motion for a moment and a brass/timpani swell
+  (`SND.bossIntro`).
+- **Bullets:** drone fire is orange-red and boss fire is magenta with a pulsing glow. Both have a dark rim so they read on any ground.
+- **Terrain surfaces:** `tools/gen_props.py` generates four tileable surfaces with the image model (jungle, rock, ice,
+  roof → `sprites/surf_*.jpg`). `paintSurf()` clips each island plateau, peak facet, iceberg top and roof and lays the surface
+  over it, anchored to the object. The shapes, lean and altitude come from the procedural code as before.
+
+### Audio
+`audio.js` synthesises everything with WebAudio. There are no sound files.
+- **Music** is a procedurally composed military-band march. A brass melody (it opens with a bugle-call figure) and
+  horn harmony play over an oom-pah tuba, offbeat brass stabs, a snare corps with ruffs and phrase-end rolls, bass
+  drum, crash cymbals and a piccolo on alternate passes, all through a small hall reverb. Each mission seeds its own
+  tune, and the key is set by sector. Bosses get a faster minor-key battle march, Star Rush gets a quicker march, and the menus play a slow anthem.
+  The music sits under the effects (bus gain 0.2), ducks while paused, and brass jingles play on mission complete and failed.
+- **Sound effects** are built like foley, not blips. Gunfire stacks a broadband crack (the muzzle), a band-passed body
+  (the round), a low thump (the pressure) and a mechanical tick (the action), with a brass casing tink on most shots and
+  small random pitch changes so bursts don't sound mechanical. Explosions add a sub-bass thump, debris crackle and a
+  reverb tail; heavy ones kick the camera.
+- Effects cover guns, missiles, the laser, flak, tesla arcs, hits, explosions, shield and barrier blocks, EMP,
+  star pickups (pitch rises with the kill chain), rescues, parts, the boss warning siren, sniper aim beeps, mine arming,
+  beam and lightning strikes, and storm thunder. They also cover enemy fire and boss volleys, flame breath, sniper cracks,
+  helicopter rotors, bomber flybys, Hive launches, splitters breaking, elite arrivals, buildings collapsing, ricochets off towers,
+  tower collisions, a low-hull alarm, a take-off whoosh, and a chime for each medal on the results screen.
+  The Stormfront adds a looping rain bed. Rapid sounds are rate-limited.
+- **Stereo placement:** enemy fire, volleys, blasts, sniper shots and lightning pan with their position on screen, so a
+  drone on the right fires from the right. Effects have their own reverb send (behind the Sound toggle) and share a
+  master compressor, so a busy fight stays loud without clipping.
+- Music and Sound toggles sit on the main menu and the pause screen and are saved in localStorage (`jarvisforce.audio`).
+  Audio starts on the first tap or key press, as browsers require. On iPhone it unlocks on touchend/click (pointerdown doesn't
+  count as a tap there), resumes after calls or app switches, and asks to play even with the silent switch on (`navigator.audioSession`).
 
 ## Code layout
 
-- `index.html`: DOM screens (menu, mission board, hangar, commendations, story comms, results, pause)
+- `index.html`: DOM screens (menu, mission board, hangar, commendations, story comms, transmissions, results, pause)
+- `story.js`: the whole script: cast, scenes, mission radio, boss voices, chatter, data cores (loaded before game.js)
 - `style.css`: UI styling
+- `audio.js`: synthesised sound effects and the procedural march (`SND`)
 - `game.js`: everything else: save (localStorage key `jarvisforce.save.v1`), upgrade/stat tables, seeded
   level generator (`genLevel`, `genRush`), entities and bosses, rendering (all procedural vector art, no assets),
-  results/medals, story text, and Jarvis quips.
+  results/medals, the radio engine, and Jarvis quips.
 
 `window.JF` exposes the save, run state, `update()` and `startLevel()` for headless balance testing.
 
@@ -116,4 +350,20 @@ Hardening (bot, 2026-11-16): a maxed jet used to kill the 1-4 boss in about 6s w
 and real damage. A 25% loadout still clears 5-4, and an un-upgraded Ember loses on 2-4. The boss sway clock now starts on
 arrival (it used to reuse the entry timer, so bosses snapped sideways when they arrived), and the boss's x eases toward its target.
 
+No-hit boss test (bot, 2026-11-17): a dodge bot that decides only every 0.3s (human reaction time) and moves at 260px/s,
+on Mk III / Ace with each boss held at 40% HP (enraged) and the Overseer in all three phases, takes 0 hits from every boss and
+vanguard in 45 to 60s each. The same bot was hit by the old Tidebreaker fans, Thunderhead lightning and Overseer beam. Boss fire
+averages about 9–18 bullets a second.
+
+Save `sv: 2` marks the six-sector layout. Older saves (no `sv`) are migrated on load: Core progress moves from missions
+16–19 to 20–23, along with its Star Rush clear and story flag.
+
 Save adds `ships: { <id>: [4 part flags] }` and `ship` (selected id). Part pickups write immediately via `collectPart()`.
+
+Toughness pass (2026-11-18): enemies were melting. Every drone's HP now scales `1 + L*.8 + sector*.1`
+(was `1 + L*.42`), so a fighter at 3-1 with 35% upgrades takes 0.61s instead of 0.35s, a gunship 2.5s instead of
+1.45s, and a carrier 8.1s instead of 4.7s. Elites are 2.1x HP and start at 5% + 4.5% per sector, enemy fire is
+faster (sector term .24) and waves arrive a little closer together. Cadet was softened less (damage .65, bullet
+speed .84, fire rate .85). Bosses keep their own, gentler HP curve so boss fights stay 45-60s. The per-blast camera
+shake added with the effects pass was removed: with several kills a second it never settled, which read as a
+bouncing screen.

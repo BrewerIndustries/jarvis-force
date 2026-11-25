@@ -33,7 +33,7 @@ canvas{position:absolute;inset:0;width:540px;height:960px;display:block}
 .btn.ghost{background:transparent;border-color:var(--line);color:var(--mute)}
 .btn:disabled{opacity:.4;cursor:default}
 .jarvis-line{margin-top:22px;max-width:470px;text-align:center;color:var(--cyan);font-size:17px;font-style:italic;min-height:24px}
-.jarvis-line:not(:empty)::before{content:"JARVIS: ";font-style:normal;font-family:Orbitron;font-size:12px;color:var(--mute)}
+.jarvis-line:not(:empty)::before{content:attr(data-who) ": ";font-style:normal;font-family:Orbitron;font-size:12px;color:var(--qc,var(--mute))}
 .bar{display:flex;align-items:center;justify-content:space-between;width:100%;gap:10px}
 .bar h2{font-family:Orbitron;margin:0;font-size:22px;letter-spacing:.08em}
 .scroll{flex:1;width:100%;overflow-y:auto;margin-top:16px;padding-right:4px;touch-action:pan-y}
@@ -81,7 +81,28 @@ canvas{position:absolute;inset:0;width:540px;height:960px;display:block}
 .dot{width:10px;height:10px;border-radius:50%;background:var(--red);animation:blink 1s infinite}
 @keyframes blink{50%{opacity:.2}}
 .comms-body{font-size:19px;line-height:1.5;min-height:250px;white-space:pre-line}
-.comms-body .who{font-family:Orbitron;font-size:12px;color:var(--cyan);letter-spacing:.1em}
+.comms-body .who{font-family:Orbitron;font-size:13px;color:var(--sc,var(--cyan));letter-spacing:.1em}
+.comms-head .skip{margin-left:auto;padding:5px 10px;font-size:11px}
+.spk{display:flex;align-items:center;gap:14px;margin-bottom:14px}
+.spk .pt{width:84px;height:84px;flex:none;border-radius:12px;overflow:hidden;border:2px solid var(--sc,var(--cyan));background:#0b1420;
+  box-shadow:0 0 18px color-mix(in srgb,var(--sc,#3fd8ff) 35%,transparent);display:flex;align-items:center;justify-content:center}
+.spk .pt img{width:100%;height:100%;object-fit:cover;display:block}
+.spk .pt.bossp img{object-fit:contain;transform:scale(1.25)}
+.spk .static{font-family:Orbitron;font-size:30px;color:#8fb3c9;width:100%;height:100%;display:flex;align-items:center;justify-content:center;
+  background:repeating-linear-gradient(0deg,rgba(160,190,210,.18) 0 2px,transparent 2px 5px);animation:stat .25s steps(2) infinite}
+@keyframes stat{50%{background-position:0 3px}}
+.spk .wave{display:flex;gap:4px;align-items:center;height:50px}
+.spk .wave i{width:5px;background:var(--sc);border-radius:2px;animation:wv .9s ease-in-out infinite}
+.spk .wave i:nth-child(2n){animation-delay:-.3s}.spk .wave i:nth-child(3n){animation-delay:-.6s}
+@keyframes wv{0%,100%{height:10px}50%{height:46px}}
+.comms-body .say{white-space:pre-line}
+.logs{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;margin-top:10px}
+.logb{text-align:left;background:#0c2238;border:1px solid var(--cyan2);border-radius:10px;padding:10px 12px;color:var(--text);cursor:pointer;font:inherit}
+.logb:hover{border-color:var(--cyan)}
+.logb b{display:block;font-family:Orbitron;font-size:12px;letter-spacing:.04em}
+.logb small{display:block;color:var(--mute);font-size:13px;margin-top:3px}
+.logb.locked{opacity:.45;cursor:default;border-color:var(--line)}
+.lvl .pd.pi{top:auto;bottom:3px;right:5px}
 .comms > .btn.big{width:100%;margin-top:16px}
 .row{display:flex;gap:8px;margin-top:16px;align-items:stretch}
 .row .btn,.row .btn.big{flex:1 1 0;margin:0;font-size:13px;padding:12px 6px}
@@ -138,6 +159,9 @@ canvas{position:absolute;inset:0;width:540px;height:960px;display:block}
 .mods{display:flex;flex-wrap:wrap;gap:4px}
 .mods span{font-size:12px;padding:1px 7px;border-radius:6px;background:#132238;color:var(--text)}
 .mods .up{color:var(--green)}
+.abil{margin-top:5px;font-size:12.5px;color:var(--text);opacity:.9;border-left:3px solid var(--ac,#7fe3ff);padding-left:7px}
+.abil b{color:var(--ac,#7fe3ff);font-family:Orbitron,sans-serif;font-size:11px;letter-spacing:.04em;margin-right:4px}
+.abil small{opacity:.6}
 .mods .down{color:var(--red)}
 .parts{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
 .parts span{font-size:12px;padding:1px 7px;border-radius:6px;border:1px dashed #2a4a6a;color:var(--mute)}
@@ -146,3 +170,37 @@ canvas{position:absolute;inset:0;width:540px;height:960px;display:block}
 .lvl{position:relative}
 .lvl .pd{position:absolute;top:3px;right:5px;font-size:12px;font-style:normal}
 .tier .salv{font-size:13px;color:var(--cyan);margin:8px 0 0}
+
+.flying{display:flex;align-items:center;gap:10px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:8px 12px;margin-bottom:12px}
+.flying img{width:44px;height:44px;flex:none}
+.flying span{flex:1;min-width:0;color:var(--mute);font-size:15px}
+.flying b{color:#fff}
+
+.audio-row{display:flex;gap:8px;justify-content:center;margin-top:12px}
+.audio-row .btn.off{opacity:.55}
+
+/* which build the playtester is actually running; bump with the ?v= on the scripts */
+.build-tag { position: absolute; left: 14px; bottom: 10px; font: 600 10px Rajdhani, sans-serif;
+  letter-spacing: .12em; text-transform: uppercase; color: rgba(190, 225, 255, .38); pointer-events: none; }
+
+/* the classified bay: only rendered once every ordinary upgrade is maxed */
+.secret-head { margin: 14px 0 8px; padding: 10px 12px; border: 1px solid rgba(255, 90, 79, .45);
+  border-radius: 10px; background: linear-gradient(180deg, rgba(70, 16, 20, .55), rgba(20, 10, 14, .5)); }
+.secret-head b { display: block; font: 700 12px Orbitron, sans-serif; letter-spacing: .18em; color: #ff8a7a; }
+.secret-head span { font: 600 12px Rajdhani, sans-serif; color: #d9b3ad; }
+.upg.secret { border-color: rgba(255, 90, 79, .35); background: linear-gradient(160deg, rgba(48, 12, 16, .7), rgba(8, 12, 20, .8)); }
+.upg.secret h4 { color: #ffb3a6; }
+.upg.secret .btn { border-color: rgba(255, 90, 79, .5); color: #ffd7d0; }
+.upg.secret .btn:disabled { opacity: .5; }
+
+/* controller focus ring: only once a gamepad has been used */
+body.pad :focus { outline: 3px solid #ffd34d; outline-offset: 3px; box-shadow: 0 0 18px rgba(255, 211, 77, .45); }
+/* mission ranks */
+.res-rank{display:flex;align-items:center;justify-content:center;gap:14px;margin:6px 0 4px}
+.res-rank .rk{font-family:Orbitron,sans-serif;font-weight:900;font-size:58px;line-height:1;color:var(--rc);text-shadow:0 0 22px var(--rc);animation:rkIn .6s cubic-bezier(.2,1.6,.4,1) both .5s}
+.res-rank .rkp{display:flex;flex-direction:column;gap:1px;font-size:12.5px;color:#9fb7cf;text-align:left}
+.res-rank .rkp b{color:#fff}
+.res-rank .rkp em{font-style:normal;color:#ffd34d;font-family:Orbitron,sans-serif;font-size:10px;letter-spacing:.06em}
+@keyframes rkIn{from{transform:scale(2.6);opacity:0}to{transform:scale(1);opacity:1}}
+.lvl .rkb{position:absolute;top:3px;left:6px;font-style:normal;font-weight:900;font-size:12px;color:var(--rc);text-shadow:0 0 8px var(--rc)}
+.lvl .mk em{font-style:normal;font-size:8.5px;letter-spacing:.03em;display:block}

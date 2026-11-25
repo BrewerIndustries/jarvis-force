@@ -45,6 +45,10 @@ jobs:
         uses: actions/upload-pages-artifact@v3
         with:
           path: _site
+      # deploy-pages sometimes looks up the artifact before GitHub has indexed it
+      # ("No artifacts named github-pages"); a short pause avoids that race.
+      - name: Let the artifact settle
+        run: sleep 15
       - name: Deploy to Pages
         id: deployment
         uses: actions/deploy-pages@v4
