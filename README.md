@@ -26,7 +26,9 @@ python3 -m http.server 4905
 Then open http://localhost:4905. From the umbrella folder's `.claude/launch.json` it's the `jarvis-force` preview.
 
 **Controls:** mouse, or drag anywhere on touch (the ship moves relative to your finger) · WASD/arrows ·
-Space/B or the EMP button = EMP charge · E/Shift or the ring button above EMP = ship ability · P/Esc or the ⏸ button = pause.
+Space/B or the EMP button = EMP charge · E/Q/Shift or the ring button above EMP = ship ability · P/Esc or the ⏸ button = pause.
+Holding a key fires once (key auto-repeat is ignored, so a held Space can't dump every EMP). The HUD buttons carry a keycap
+label for the last input device used (SPACE / E on keys, A / X on a pad, none on touch), and How to Play lists the controls.
 The ship fires automatically. Only the white dot at the centre of the ship takes hits.
 
 **Game controllers** (Gamepad API, any standard pad): left stick or d-pad flies; A or RB = EMP; X or LB = ship ability;

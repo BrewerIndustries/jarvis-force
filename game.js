@@ -1919,7 +1919,7 @@ function hurtPlayer(d) {
 }
 
 function useAbility() { if (typeof shipAbility === 'function') shipAbility(); }
-// ---- ship abilities: one per airframe on a cooldown. X / LB on a pad, E or Shift on keys, the ring button on touch.
+// ---- ship abilities: one per airframe on a cooldown. X / LB on a pad, E, Q or Shift on keys, the ring button on touch.
 const ABIL = {
   ember:     { name: 'AFTERBURN VOLLEY', cd: 16, c: '#29b6f6', desc: 'Four seconds of overdriven guns.' },
   kestrel:   { name: 'DASH',             cd: 5,  c: '#7fe05a', desc: 'Snap sideways, untouchable for an instant.' },
@@ -1974,6 +1974,15 @@ function shipAbility() {
       break;
     }
   }
+}
+// small keycap label beside a HUD button (hidden on touch, where you tap the button itself)
+function keyBadge(x, y, label) {
+  if (!label) return;
+  ctx.font = '800 10px Orbitron, sans-serif'; ctx.textAlign = 'center';
+  const w = Math.max(18, ctx.measureText(label).width + 10);
+  ctx.fillStyle = 'rgba(10,16,26,.85)'; ctx.strokeStyle = 'rgba(190,220,245,.55)'; ctx.lineWidth = 1;
+  rr(x - w / 2, y - 9, w, 17, 4); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#e6f2ff'; ctx.fillText(label, x, y + 4);
 }
 function useBomb() {
   if (state !== 'play' || paused || run.bombs <= 0 || P.dead || run.endT > 0) return;
@@ -3072,6 +3081,7 @@ function drawHUD() {
   ctx.beginPath(); ctx.arc(bx, by, 32, 0, 7); ctx.stroke();
   ctx.fillStyle = '#fff'; ctx.textAlign = 'center'; ctx.font = '900 14px Orbitron, sans-serif'; ctx.fillText('EMP', bx, by + 1);
   ctx.font = '700 13px Orbitron, sans-serif'; ctx.fillStyle = '#ffcc33'; ctx.fillText(`×${run.bombs}`, bx, by + 18);
+  keyBadge(bx, by + 44, { key: 'SPACE', pad: 'A' }[inputMode]);
   // ability button: fills clockwise as the cooldown runs down
   { const A = abilOf(), ax = W - 62, ay = H - 162, k = P.abT > 0 ? 1 - P.abT / A.cd : 1, ok = k >= 1;
     ctx.fillStyle = ok ? 'rgba(20,30,44,.9)' : 'rgba(16,22,32,.8)'; ctx.beginPath(); ctx.arc(ax, ay, 30, 0, 7); ctx.fill();
@@ -3080,6 +3090,7 @@ function drawHUD() {
     ctx.beginPath(); ctx.arc(ax, ay, 27, -Math.PI / 2, -Math.PI / 2 + 6.283 * k); ctx.stroke(); ctx.globalAlpha = 1;
     ctx.fillStyle = ok ? A.c : '#7d8ea3'; ctx.textAlign = 'center'; ctx.font = '800 9px Orbitron, sans-serif';
     const w = A.name.split(' '); w.forEach((t, i) => ctx.fillText(t, ax, ay + 3 + (i - (w.length - 1) / 2) * 11));
+    keyBadge(ax - 40, ay - 22, { key: 'E', pad: 'X' }[inputMode]);
   }
   // boss bar: name plate plus a segmented hull readout
   if (boss && !boss.dead && boss.y > 0) {
@@ -3595,6 +3606,7 @@ function buildAch() {
 
 function buildHowto() {
   $('howtoText').innerHTML = `
+  <h4>🎮 Controls</h4><p><b>Move:</b> arrow keys or WASD, drag on touch, or the left stick.<br><b>EMP</b> (clears every bullet, damages every drone): <b>Space</b> or <b>B</b>, the EMP button on touch, or <b>A</b> / RB on a controller.<br><b>Ship ability</b> (recharges on its own): <b>E</b>, <b>Q</b> or <b>Shift</b>, the ring button above the EMP on touch, or <b>X</b> / LB on a controller.<br><b>Pause:</b> Esc or P, or Start. Your guns fire automatically.</p>
   <h4>★ Shoot down Legion drones</h4><p>Every drone drops stars. Bigger drones drop more, and later sectors pay better.</p>
   <h4>⛓️ Kill chains</h4><p>Keep destroying drones quickly and your star multiplier climbs to ×3. A chain of 10 or more also pays a bonus at the end.</p>
   <h4>🛟 Rescue survivors</h4><p>Hover over the SOS rafts for about a second. Every survivor you rescue pays stars.</p>
@@ -3651,16 +3663,20 @@ function audioLabels() {
 document.querySelectorAll('[data-snd]').forEach(b => b.addEventListener('click', () => { SND.toggle(b.dataset.snd); audioLabels(); }));
 audioLabels();
 
+// last input device, so the HUD buttons can show the right key/button labels
+let inputMode = matchMedia('(pointer: coarse)').matches ? 'touch' : 'key';
+const KEY_EMP = ['Space', 'KeyB'], KEY_ABIL = ['KeyE', 'KeyQ', 'ShiftLeft', 'ShiftRight'];
 addEventListener('keydown', e => {
-  keys[e.code] = true;
-  if (e.code === 'Space' || e.code === 'KeyB') { useBomb(); e.preventDefault(); }
-  if (e.code === 'KeyE' || e.code === 'ShiftLeft' || e.code === 'ShiftRight') { useAbility(); }
+  keys[e.code] = true; inputMode = 'key';
+  if (KEY_EMP.includes(e.code)) { e.preventDefault(); if (!e.repeat) useBomb(); } // a held key must not dump every EMP
+  if (KEY_ABIL.includes(e.code) && !e.repeat) useAbility();
   if (e.code === 'Escape' || e.code === 'KeyP') { if (state === 'play') pauseGame(); else if (state === 'pause') $('pResume').click(); }
 });
 addEventListener('keyup', e => { keys[e.code] = false; });
 
 function gp(ev) { const r = cv.getBoundingClientRect(); return { x: (ev.clientX - r.left) * W / r.width, y: (ev.clientY - r.top) * H / r.height }; }
 cv.addEventListener('pointerdown', ev => {
+  if (ev.pointerType !== 'mouse') inputMode = 'touch';
   if (state !== 'play') return;
   const p = gp(ev);
   if (Math.hypot(p.x - (W - 62), p.y - (H - 72)) < 44) { useBomb(); return; }
@@ -3707,6 +3723,7 @@ function pollPad(dt) {
   if (b(14)) x = -1; if (b(15)) x = 1; if (b(12)) y = -1; if (b(13)) y = 1;
   const m = Math.hypot(x, y); if (m > 1) { x /= m; y /= m; }
   pad.x = x; pad.y = y;
+  if (now.some((v, i) => v && !pad.prev[i]) || m > .5) inputMode = 'pad';
   if (state === 'play') {
     if (hit(0) || hit(5)) useBomb();
     if (hit(2) || hit(4)) useAbility();

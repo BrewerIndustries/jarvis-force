@@ -31,7 +31,7 @@
     </div>
     <div class="audio-row"><button class="btn small" data-snd="music"></button><button class="btn small" data-snd="sfx"></button></div>
     <div class="jarvis-line" id="menuQuip"></div>
-    <div class="build-tag">dev build 31</div>
+    <div class="build-tag">dev build 32</div>
   </section>
 
   <!-- MISSION MAP -->
@@ -109,8 +109,8 @@
   <div id="toasts"></div>
 </div>
 <!-- bump ?v= on every deploy: Pages caches scripts for 10 minutes, which strands playtesters on an old build -->
-<script src="audio.js?v=31"></script>
-<script src="game.js?v=31"></script>
+<script src="audio.js?v=32"></script>
+<script src="game.js?v=32"></script>
 <script>/* the menu build tag shows the game.js version that actually loaded, so it can never lag the ?v= bump */ (function () { var m = /[?&]v=(\d+)/.exec((document.querySelector('script[src*="game.js"]') || {}).src || ''); var t = document.querySelector('.build-tag'); if (m && t) t.textContent = 'dev build ' + m[1]; })();</script>
 </body>
 </html>
