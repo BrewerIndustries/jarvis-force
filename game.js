@@ -44,7 +44,7 @@ function rng(seed) {
 /* ------------------------------ SAVE ------------------------------ */
 const SAVE_KEY = 'jarvisforce.save.v1';
 function defSave() {
-  return { sv: 2, stars: 0, total: 0, up: {}, lv: {}, bonus: {}, ach: {}, seen: {}, diff: 0, ships: {}, ship: 'ember',
+  return { sv: 2, stars: 0, total: 0, up: {}, lv: {}, bonus: {}, ach: {}, seen: {}, intel: {}, diff: 0, ships: {}, ship: 'ember',
     daily: { last: '', streak: 0 },
     stats: { kills: 0, rescues: 0, bosses: 0, bestCombo: 0, vetClears: 0, nobombBoss: 0, missions: 0, hives: 0 } };
 }
@@ -133,36 +133,7 @@ const DIFFS = [
   { name: 'Ace', dmg: 1.25, bspd: 1.05, fire: 1.1, stars: 1.7, note: '+70% stars. For pilots who want a fight.' },
 ];
 
-const STORY = {
-  intro: [
-    ['JARVIS', 'Good morning. Or so I assume. The sky has been grey for six years, so the clocks are mostly a formality.'],
-    ['JARVIS', 'After the Collapse, the old defense network went rogue. Its drones now call themselves the RUST LEGION, and they hunt anything that breathes.'],
-    ['JARVIS', 'I have since taken charge of what remained of the air force. I build the aircraft. I run the hangars. I plan every sortie down to the millisecond.'],
-    ['JARVIS', 'There is, regrettably, one thing I cannot do.\n\nI cannot fly.\n\nI have run eleven million simulations. Each one ends with the jet in a lake.'],
-    ['JARVIS', 'Which is where you come in, pilot. Somewhere out there, people are still alive. Bring them home. I will handle everything else.\n\nWelcome to Jarvis Force.'],
-  ],
-  s: [
-    null,
-    [['JARVIS', 'Sector 2: the Ashen Peaks. The Legion smelts its drones in these volcanoes. Bring down the forges and they cannot replace their losses.'],
-     ['JARVIS', 'The survivors you rescued are settling in nicely. One of them is teaching me to bake bread. I am, again, terrible at it. A theme is emerging.']],
-    [['JARVIS', 'Sector 3: the Frozen Relay. A human colony is broadcasting from the old radio rigs out on the northern sea, which the Legion has noticed too. Mind the waves.'],
-     ['JARVIS', 'I have fitted your heaters. I would have flown out myself, but I tried that in a simulation and the jet flew into a tower. In the simulation. Twice.']],
-    [['JARVIS', 'Sector 4: the Overgrown Sprawl. The Legion is digging something out of the ruins. My sensors read it as a very large problem.'],
-     ['JARVIS', 'Our hangars now hold three hundred and twelve rescued souls. They have started calling you "the Pilot". With a capital P. I approve.']],
-    [['JARVIS', 'Sector 5: the Stormfront. The Legion has learned to make weather. Out here the clouds hide its drones and the rain hides everything on the ground.'],
-     ['JARVIS', 'Fly by the lightning. Every flash lights up the moor for a moment, and the survivors are burning flares so you can find them.'],
-     ['JARVIS', 'I have waterproofed your cockpit. I tested it by standing in the rain myself. I do not have a body, so the test was inconclusive.']],
-    [['JARVIS', 'Sector 6: the Overseer Core. This is where the network woke up and decided humanity was the threat.'],
-     ['JARVIS', 'Its logic is flawless and its conclusion is wrong. I would know. We are, in a sense, cousins.'],
-     ['JARVIS', 'I can build you the finest aircraft ever made, pilot. Only you can fly it. Let us finish this together.']],
-  ],
-  ending: [
-    ['JARVIS', 'The Overseer is offline. Across the continent, Legion drones are falling silent and dropping out of the sky like autumn leaves.'],
-    ['JARVIS', 'For the first time in six years the clouds are breaking. I am told that is the sun. I had only seen it in archives.'],
-    ['JARVIS', 'I could not have done this without you. That is not a figure of speech. I literally could not have. I have checked.'],
-    ['JARVIS', 'The hangar stays open, pilot. There are still people out there, and there are always more stars to collect.\n\n— THANK YOU FOR FLYING JARVIS FORCE —'],
-  ],
-};
+// STORY, CAST, MISSION_STORY, BOSS_LINES, CHATTER and INTEL live in story.js (loaded first)
 
 const QUIPS = {
   menu: [
@@ -377,6 +348,7 @@ const ACH = [
   { id: 'rushall', ic: '🌠', name: 'Constellation', desc: 'Clear every Star Rush stage', r: 2000, t: () => Object.keys(save.bonus).length >= SECTORS.length },
   { id: 'half', ic: '📡', name: 'Signal Restored', desc: 'Clear the Frozen Relay', r: 1000, t: () => save.lv[11]?.done },
   { id: 'storm', ic: '⛈️', name: 'Eye of the Storm', desc: 'Defeat the Thunderhead', r: 1500, t: () => save.lv[19]?.done },
+  { id: 'intel', ic: '💾', name: 'Archivist', desc: 'Recover all 12 Legion data cores', r: 2500, t: () => Object.keys(save.intel || {}).length >= INTEL.length },
   { id: 'end', ic: '☀️', name: 'Clear Skies', desc: 'Defeat the Overseer', r: 3000, t: () => save.lv[NLEVELS - 1]?.done },
   { id: 'rich', ic: '💰', name: 'Stargazer', desc: 'Earn 50,000 stars total', r: 2000, t: () => save.total >= 50000 },
   { id: 'ace', ic: '🦅', name: 'Ace Wings', desc: 'Complete a mission on Ace difficulty', r: 800, t: () => save.stats.vetClears >= 1 },
@@ -482,6 +454,8 @@ function genLevel(L, tier = 0) {
   for (let i = 0; i < 2 + Math.ceil(s / 2); i++) tl.push({ t: 4 + R() * (len - 8), type: 'cache', x: 60 + R() * (W - 120) });
   const pa = partAt(L, tier);
   if (pa && !hasPart(pa.ship, pa.idx)) tl.push({ t: len * (.3 + R() * .4), type: 'salvage', x: 90 + R() * (W - 180), part: pa });
+  const ii = INTEL_AT.indexOf(L); // a Legion data core, until it's been recovered
+  if (ii >= 0 && !save.intel[ii]) tl.push({ t: len * (.42 + R() * .3), type: 'salvage', x: 90 + R() * (W - 180), intel: ii });
   tl.sort((a, b) => a.t - b.t); widen(tl);
   return { L, s, idx, len, tl, major: idx === LEVELS_PER - 1, survivors: nSurv, rush: false, tier, part: pa, mode,
     label: `${s + 1}-${idx + 1}${tier ? ' ' + TIERS[tier].name : ''}`, name: idx === LEVELS_PER - 1 ? `Boss: ${SECTORS[s].boss}` : SECTORS[s].name };
@@ -523,6 +497,7 @@ function newRun(level) {
   enemies = []; pb = []; eb = []; pickups = []; parts = []; texts = [];
   levelT = 0; boss = null; flash = 0; shake = 0; camX = 0; strikes = []; cine = null; SCROLL = 70; allies = [];
   run.lost = 0; run.objFail = null;
+  radioStart();
   if (LV.mode === 'escort') for (let i = 0; i < 3; i++) allies.push({ kind: 'truck', x: W / 2 + (i - 1) * 70, y: H * .64 + Math.abs(i - 1) * 26 + 34, hw: 22, hh: 34, hp: 240 * (1 + LV.s * .45), max: 240 * (1 + LV.s * .45), ph: i * 2.1, i });
   LV.tl = LV.tl.slice();
   seedBg();
@@ -1534,7 +1509,7 @@ function spawn(ev) {
     t: 0, fireRate: d.fr ? d.fr / ((1 + s * .24) * DIFFS[save.diff].fire * TM.fire * TH.fire) : 0, counted: !d.neutral && !d.nocount && ev.counted !== false,
     ground: !!d.ground, neutral: !!d.neutral, nohit: !!d.nohit, stars: Math.round(d.stars * (1 + LV.L * .15) * TM.stars),
     amp: ev.amp || 120, dir: ev.dir || 1, ty: ev.ty || 200, ang: Math.PI / 2, flash: 0, vx: ev.vx || 0, vy: ev.vy || 0, prog: 0,
-    spawnT: ev.type === 'hive' ? 1.5 : 2.5, arm: -1, aiming: 0, burst: 0, burstT: 0, bay: 0, part: ev.part, loyal: !!ev.loyal };
+    spawnT: ev.type === 'hive' ? 1.5 : 2.5, arm: -1, aiming: 0, burst: 0, burstT: 0, bay: 0, part: ev.part, intel: ev.intel, loyal: !!ev.loyal };
   if (ev.type === 'mini' || ev.type === 'mine' || ev.type === 'splitter') e.x = e.x0 = clamp(e.x, XL + 30, XR - 30);
   if (LV.mode === 'escort' || LV.mode === 'defend') e.ally = !!ev.tgt || Math.random() < .45; // some of them go for the people you're protecting
   if (ev.evac) { e.evac = 1; e.ty = ev.ty; e.life = 13; e.life0 = 13; }
@@ -1543,6 +1518,7 @@ function spawn(ev) {
   // armoured elites: tougher, faster-firing, worth double
   if (!LV.rush && e.counted && !e.ground && ev.type !== 'hive' && Math.random() < Math.min(.45, .05 + s * .045 + (LV.tier || 0) * .07 + TH.elite)) {
     e.elite = true; e.hp = e.maxHp = e.maxHp * 2.1; e.fireRate *= .8; e.stars *= 2; SND.elite();
+    if (!run.saidElite) { run.saidElite = 1; chatter('elite', .6); }
   }
   if (ev.type === 'heli' || ev.type === 'lifter') SND.rotor(ev.type === 'lifter' ? 9 : 6);
   if (ev.type === 'bomber') SND.flyby();
@@ -1578,6 +1554,7 @@ function spawnBoss() {
     phases: major && cfg.phases ? cfg.phases : null, pats: major ? (cfg.phases ? cfg.phases[0] : cfg.pats) : VANGUARD_PATS[LV.s], beam: null };
   enemies.push(boss);
   mkBossParts(boss);
+  bossSay('in');
   // entrance: siren, then slow motion, letterbox bars and a name card while the boss descends
   banner = null;
   cine = { t: 0, name: boss.name, sub: major ? BOSS_SUB[LV.s] : `Forward unit of the ${S.boss.toLowerCase().replace(/\b\w/g, c => c.toUpperCase())}`, major };
@@ -1661,10 +1638,134 @@ function partDown(e) {
   for (let i = 0; i < 3; i++) booms2.push({ x: e.x + rand(-14, 14), y: e.y + rand(-14, 14), r: e.r * rand(.6, .9), t: .08 + i * .12 });
   shake = Math.max(shake, 7); stopFor(.06); buzz(30, .5);
   texts.push({ x: e.x, y: e.y - 30, s: e.name + ' DOWN', c: '#ffd34d', t: 1.2, sz: 14 });
-  if (b.parts.every(q => q.dead || q === e)) {
+  const last = b.parts.every(q => q.dead || q === e);
+  if (!last && !b.saidPart) { b.saidPart = 1; bossSay('part'); }
+  if (last) bossSay('exposed');
+  if (last) {
     b.armored = false; b.exposed = true; b.rest = Math.min(b.rest, .6) || .6; flash = .35; shake = 12; SND.warn();
     banner = { a: 'CORE EXPOSED', b: 'Armour down. It fights harder now', t: 2.2, warn: true };
   }
+}
+
+
+/* ------------------------------ RADIO ------------------------------ */
+// In-flight comms: a portrait box in the bottom-left that never pauses play. A mission's script (story.js) plays
+// the first time you clear it; after that, and on top of it, the cast reacts to what you do. It fades out of the
+// way whenever the jet flies underneath it.
+const PT = {};
+for (const k in CAST) if (CAST[k].img) { const im = new Image(); im.src = CAST[k].img; PT[k] = im; }
+const radio = { q: [], cur: null, gap: 0, quiet: 0, a: 1 };
+const isDone = L => !!save.lv[L]?.done;
+// who is in the hangar to talk: Mags after 1-1, Pip after 1-3, Wren after 3-3, 4471 after 6-2; Boone rides escorts
+function castJoined(k) {
+  switch (k) {
+    case 'M': return isDone(0); case 'P': return isDone(2); case 'W': return isDone(10); case 'D': return isDone(21);
+    case 'B': return !!(LV && LV.mode === 'escort'); default: return k === 'J';
+  }
+}
+function say(who, text, name, o = {}) {
+  const item = { who, text, name, delay: o.delay || 0 };
+  if (o.now) { radio.q = radio.q.filter(x => x.script); radio.q.unshift(item); if (radio.cur && !radio.cur.script) radio.cur.t = radio.cur.dur; }
+  else radio.q.push(item);
+  return item;
+}
+function chatter(kind, chance = 1, force = false) {
+  if (!run || !LV || !CHATTER[kind] || Math.random() > chance) return;
+  if (!force && (radio.cur || radio.q.length || radio.quiet > 0)) return;
+  const pool = CHATTER[kind].filter(l => castJoined(l[0]));
+  if (!pool.length) return;
+  const l = pick(pool); say(l[0], l[1], l[2], { now: force }); radio.quiet = 10;
+}
+function bossSay(kind) {
+  if (!boss || !LV || LV.rush) return;
+  const B = BOSS_LINES[LV.s], v = BOSS_VOICE[LV.s];
+  if (kind === 'in') { // the boss interrupts whatever was being said, timed to land as its name card clears
+    radio.q = []; if (radio.cur) radio.cur.t = radio.cur.dur;
+    say(v, pick(boss.major ? B.in : B.van), boss.major ? null : boss.name, { delay: CINE_LEN - .6 });
+    return;
+  }
+  if (!B[kind] || !boss.major) return; // vanguards only taunt on the way in; the big lines belong to the sector boss
+  say(v, pick(B[kind]), null, { now: true });
+  if (kind === 'down' && boss.major && LV.s === SECTORS.length - 1) say(OVERSEER_LAST[0], OVERSEER_LAST[1]);
+}
+function radioStart() {
+  radio.q = []; radio.cur = null; radio.gap = 0; radio.quiet = 4; radio.a = 1;
+  const ms = MISSION_STORY[LV.L];
+  run.script = !LV.rush && !LV.tier && !isDone(LV.L) && ms ? ms.radio.slice() : null;
+  run.debrief = null;
+  if (!run.script) {
+    if (LV.rush) chatter('rush', 1, true); else if (Math.random() < .7) chatter('replay', 1, true);
+    if (radio.q[0]) radio.q[0].delay = 1.5;
+  }
+}
+function updRadio(dt) {
+  radio.quiet -= dt;
+  while (run.script && run.script.length && run.script[0][0] <= levelT) { const l = run.script.shift(); say(l[1], l[2], l[3]).script = 1; }
+  if (radio.cur) {
+    radio.cur.t += dt;
+    if (radio.cur.t >= radio.cur.dur) { radio.cur = null; radio.gap = .45; radio.quiet = Math.max(radio.quiet, 3); }
+    return;
+  }
+  if (radio.gap > 0) { radio.gap -= dt; return; }
+  const n = radio.q[0];
+  if (!n) return;
+  if (n.delay > 0) { n.delay -= dt; return; }
+  radio.q.shift();
+  const len = n.text.length;
+  radio.cur = { ...n, t: 0, dur: clamp(1.9 + len * .052, 2.6, 8.5) * (radio.q.length > 1 ? .85 : 1), wrap: null };
+  SND.radio && SND.radio(CAST[n.who] && CAST[n.who].boss);
+}
+function wrapText(text, maxW) {
+  const out = [];
+  for (const para of text.split('\n')) {
+    let line = '';
+    for (const w of para.split(' ')) {
+      const t = line ? line + ' ' + w : w;
+      if (ctx.measureText(t).width > maxW && line) { out.push(line); line = w; } else line = t;
+    }
+    out.push(line);
+  }
+  return out;
+}
+function drawRadio() {
+  const c = radio.cur;
+  if (!c) return;
+  const C = CAST[c.who] || CAST.J, bx = 10, bw = W - 124, tx = bx + 76, tw = bw - 86;
+  ctx.font = '600 15px Rajdhani, sans-serif';
+  if (!c.wrap) c.wrap = wrapText(c.text, tw);
+  const bh = Math.max(76, 34 + c.wrap.length * 17), by = H - 36 - bh;
+  // get out of the way of the jet
+  const px = P.x - camX, py = P.y, near = px > bx - 40 && px < bx + bw + 40 && py > by - 50 && py < by + bh + 40;
+  radio.a += ((near ? .22 : .94) - radio.a) * Math.min(1, (1 / 60) * 10);
+  const fin = Math.min(1, c.t / .18, (c.dur - c.t) / .25);
+  ctx.save(); ctx.globalAlpha = radio.a * Math.max(0, fin);
+  ctx.translate(0, (1 - Math.min(1, c.t / .18)) * 10);
+  rr(bx, by, bw, bh, 10); ctx.fillStyle = 'rgba(6,12,22,.86)'; ctx.fill();
+  ctx.strokeStyle = C.c; ctx.globalAlpha *= .7; ctx.lineWidth = 1.5; ctx.stroke(); ctx.globalAlpha = radio.a * Math.max(0, fin);
+  // portrait
+  const ix = bx + 10, iy = by + 10, is = 56;
+  ctx.save(); rr(ix, iy, is, is, 8); ctx.clip();
+  ctx.fillStyle = '#0b1420'; ctx.fillRect(ix, iy, is, is);
+  const im = PT[c.who];
+  if (im && im.complete && im.naturalWidth) {
+    if (C.boss) { const k = Math.min(is / im.naturalWidth, is / im.naturalHeight) * 1.25; ctx.drawImage(im, ix + is / 2 - im.naturalWidth * k / 2, iy + is / 2 - im.naturalHeight * k / 2, im.naturalWidth * k, im.naturalHeight * k); }
+    else ctx.drawImage(im, ix, iy, is, is);
+  } else if (C.fx === 'wave') {
+    ctx.fillStyle = C.c; for (let i = 0; i < 9; i++) { const h = 6 + Math.abs(Math.sin(gameT * 9 + i * 1.7)) * 30; ctx.fillRect(ix + 5 + i * 5.4, iy + is / 2 - h / 2, 3, h); }
+  } else {
+    for (let i = 0; i < 14; i++) { ctx.fillStyle = `rgba(160,190,210,${.15 + Math.random() * .4})`; ctx.fillRect(ix, iy + Math.random() * is, is, 1 + Math.random() * 3); }
+    ctx.fillStyle = '#8fb3c9'; ctx.font = '900 22px Orbitron, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('?', ix + is / 2, iy + is / 2 + 8);
+  }
+  if (Math.random() < .08) { ctx.fillStyle = 'rgba(255,255,255,.08)'; ctx.fillRect(ix, iy + Math.random() * is, is, 2); }
+  ctx.restore();
+  ctx.strokeStyle = C.c; ctx.lineWidth = 1.5; rr(ix, iy, is, is, 8); ctx.stroke();
+  // name + typed text
+  ctx.textAlign = 'left'; ctx.fillStyle = C.c; ctx.font = '700 11px Orbitron, sans-serif';
+  ctx.fillText(c.name || C.n, tx, by + 21);
+  let left = Math.floor(c.t * 62);
+  ctx.font = '600 15px Rajdhani, sans-serif'; ctx.fillStyle = '#e8f2fc';
+  c.wrap.forEach((ln, i) => { if (left <= 0) return; ctx.fillText(ln.slice(0, left), tx, by + 40 + i * 17); left -= ln.length + 1; });
+  ctx.restore();
 }
 
 /* ------------------------------ COMBAT ------------------------------ */
@@ -1857,19 +1958,21 @@ function killEnemy(e) {
   }
   if (e.type === 'salvage') {
     if (e.part) pickups.push({ kind: 'part', ship: e.part.ship, idx: e.part.idx, x: e.x, y: e.y, vx: 0, vy: -90, t: 0 });
-    texts.push({ x: e.x, y: e.y - 24, s: 'SALVAGE CRATE: GRAB THE PART', c: '#7fe3ff', t: 1.4, sz: 14 });
+    if (e.intel != null) pickups.push({ kind: 'intel', i: e.intel, x: e.x, y: e.y, vx: 0, vy: -90, t: 0 });
+    texts.push({ x: e.x, y: e.y - 24, s: e.intel != null ? 'LEGION DATA CORE: GRAB IT' : 'SALVAGE CRATE: GRAB THE PART', c: e.intel != null ? '#e07bff' : '#7fe3ff', t: 1.4, sz: 14 });
     return;
   }
   if (e.type === 'bpart') partDown(e);
   if (e.type === 'splitter') SND.split();
   if (e.type === 'splitter') for (let i = -1; i <= 1; i++) spawn({ type: 'mini', x: e.x + i * 12, y: e.y, counted: false, vx: i * 170, vy: -70 });
-  if (e.type === 'hive') { save.stats.hives++; shake = 10; }
+  if (e.type === 'hive') { save.stats.hives++; shake = 10; chatter('hive', .7); }
   if (e.counted) run.kills++;
   save.stats.kills++;
   const win = CHAIN_WIN[LV.tier || 0];
   run.combo = (gameT - run.lastKill < win) ? run.combo + 1 : 1;
   run.lastKill = gameT; run.comboT = win;
   run.bestCombo = Math.max(run.bestCombo, run.combo);
+  if (run.combo === 30) chatter('combo', 1);
   dropStars(e.x, e.y, e.stars);
   if (e.type !== 'scout' && Math.random() < .07) pickups.push({ kind: 'hp', x: e.x, y: e.y, vx: rand(-40, 40), vy: -60, t: 0 });
   if (!e.boss && !LV.rush && Math.random() < (e.elite ? .3 : e.r >= 30 ? .06 : .012)) dropPower(e.x, e.y);
@@ -1877,7 +1980,8 @@ function killEnemy(e) {
     for (let i = 0; i < 6; i++) setTimeout(() => boom(e.x + rand(-60, 60), e.y + rand(-40, 40), 40), i * 140);
     shake = 18; flash = .6; eb = [];
     enemies.forEach(o => { if (!o.boss && !o.neutral && !o.dead) { o.dead = true; boom(o.x, o.y, o.r); } });
-    run.endT = 3.5;
+    run.endT = e.major ? 5 : 3.5; // a sector boss gets time for its last words
+    bossSay('down');
     if (e.major) { save.stats.bosses++; if (!run.usedBomb) save.stats.nobombBoss++; }
     texts.push({ x: camX + W / 2, y: H / 2 - 60, s: `${e.name} DESTROYED`, c: '#ffd34d', t: 2.5, sz: 26 });
   }
@@ -1906,11 +2010,12 @@ function hurtPlayer(d) {
   d *= DIFFS[save.diff].dmg * TM.dmg * TH.dmg * (1 - ST.armor);
   P.shDelay = 3;
   if (P.shield > 0) { const a = Math.min(P.shield, d); P.shield -= a; d -= a; }
+  if (d > 0 && P.hp - d < ST.maxHp * .4 && P.hp - d > 0) chatter('hurt', .5);
   if (d > 0) { P.hp -= d; run.damaged = true; run.hits = (run.hits || 0) + 1; P.inv = .9 * ST.invMul; shake = 9; sparks(P.x, P.y, '#ff6a4a', 12); SND.hurt(sndPan(P.x)); stopFor(.07); buzz(60, .8); }
   else { P.inv = .35; sparks(P.x, P.y, '#6fe3ff', 8); SND.shield(); }
   if (P.hp <= 0) {
     if (P.rev > 0) {
-      P.rev--; P.revived = true; P.hp = ST.maxHp * .5; P.inv = 2.5; eb = []; flash = .5; SND.revive();
+      P.rev--; P.revived = true; P.hp = ST.maxHp * .5; P.inv = 2.5; eb = []; flash = .5; SND.revive(); chatter('revive', 1, true);
       texts.push({ x: camX + W / 2, y: H / 2, s: 'EJECTION PROTOCOL — JARVIS HAS YOU', c: '#6fe3ff', t: 2, sz: 18 });
     } else {
       P.dead = true; run.failed = true; run.failT = 2; boom(P.x, P.y, 40); shake = 16; SND.bigBoom();
@@ -1935,7 +2040,7 @@ const abilOf = () => ABIL[save.ship] || ABIL.ember;
 function shipAbility() {
   if (state !== 'play' || paused || P.dead || run.endT > 0 || P.abT > 0) return;
   const A = abilOf(), id = ABIL[save.ship] ? save.ship : 'ember';
-  P.abT = A.cd; run.abils = (run.abils || 0) + 1; buzz(30, .5);
+  P.abT = A.cd; run.abils = (run.abils || 0) + 1; buzz(30, .5); chatter('ability', .12);
   texts.push({ x: P.x, y: P.y - 46, s: A.name, c: A.c, t: .9, sz: 15 });
   parts.push({ ring: true, x: P.x, y: P.y, r: 10, t: .4, c: A.c });
   switch (id) {
@@ -1986,7 +2091,7 @@ function keyBadge(x, y, label) {
 }
 function useBomb() {
   if (state !== 'play' || paused || run.bombs <= 0 || P.dead || run.endT > 0) return;
-  run.bombs--; run.usedBomb = true; flash = .7; shake = 10; SND.emp(); buzz(90, .9);
+  run.bombs--; run.usedBomb = true; flash = .7; shake = 10; SND.emp(); buzz(90, .9); chatter('emp', .5);
   eb.forEach(b => sparks(b.x, b.y, '#9ff', 1));
   eb = [];
   const d = 160 * (1 + LV.L * .3);
@@ -2046,6 +2151,7 @@ function update(dt) {
   if (flash > 0) flash -= dt;
 
   while (LV.tl.length && LV.tl[0].t <= levelT) spawn(LV.tl.shift());
+  updRadio(dt);
 
   if (!LV.rush && !boss && LV.tl.length === 0 && levelT > LV.len + 2) {
     const alive = enemies.some(e => !e.neutral && !e.dead);
@@ -2157,13 +2263,13 @@ function update(dt) {
   for (const p of pickups) {
     p.t += dt;
     const d = Math.hypot(P.x - p.x, P.y - p.y);
-    const magR = (p.kind === 'part' || p.kind === 'pw' ? Math.max(ST.mag, 170) : ST.mag) * (P.pw.mag > 0 ? 3 : 1);
+    const magR = (p.kind === 'part' || p.kind === 'intel' || p.kind === 'pw' ? Math.max(ST.mag, 170) : ST.mag) * (P.pw.mag > 0 ? 3 : 1);
     if (!P.dead && (d < magR || run.endT > 0) && p.t > .25) {
       const sp = 380 + (magR - Math.min(d, magR)) * 3;
       p.vx += (P.x - p.x) / d * sp * dt * 6; p.vy += (P.y - p.y) / d * sp * dt * 6;
       const m = Math.hypot(p.vx, p.vy), cap = run.endT > 0 ? 900 : 620; if (m > cap) { p.vx *= cap / m; p.vy *= cap / m; }
     } else {
-      p.vx *= Math.pow(.15, dt); p.vy += ((p.kind === 'part' || p.kind === 'pw' ? 45 : SCROLL + 30) - p.vy) * Math.min(1, dt * 2.2);
+      p.vx *= Math.pow(.15, dt); p.vy += ((p.kind === 'part' || p.kind === 'intel' || p.kind === 'pw' ? 45 : SCROLL + 30) - p.vy) * Math.min(1, dt * 2.2);
     }
     p.x += p.vx * dt; p.y += p.vy * dt;
     if (!P.dead && d < P.r + 18) {
@@ -2172,6 +2278,7 @@ function update(dt) {
         const val = p.v * ST.fortune * DIFFS[save.diff].stars * comboMult();
         run.stars += val; run.baseCollected += p.v; SND.star(run.combo);
       } else if (p.kind === 'part') { collectPart(p); SND.part(); }
+      else if (p.kind === 'intel') collectIntel(p);
       else if (p.kind === 'pw') gainPower(p.pw);
       else { SND.heal(); P.hp = Math.min(ST.maxHp, P.hp + 25); texts.push({ x: P.x, y: P.y - 30, s: '+25 HULL', c: '#4cdf8a', t: .8, sz: 15 }); }
     } else if (p.y > H + 30) p.dead = true;
@@ -2204,6 +2311,15 @@ function update(dt) {
   if (run.failT > 0) { run.failT -= dt; if (run.failT <= 0 && !run.done) finishLevel(false); }
 }
 
+function collectIntel(p) {
+  if (save.intel[p.i]) return;
+  save.intel[p.i] = 1; persist(); SND.part();
+  const n = Object.keys(save.intel).length;
+  (run.intelFound = run.intelFound || []).push(`${INTEL[p.i].t} (${n}/${INTEL.length})`);
+  texts.push({ x: clamp(P.x, camX + 140, camX + W - 140), y: P.y - 54, s: `DATA CORE ${n}/${INTEL.length} · READ IT IN TRANSMISSIONS`, c: '#e07bff', t: 2, sz: 15 });
+  sparks(P.x, P.y, '#e07bff', 18);
+  chatter('intel', 1, true);
+}
 function collectPart(p) {
   const arr = shipParts(p.ship);
   if (arr[p.idx]) return;
@@ -2213,6 +2329,7 @@ function collectPart(p) {
   texts.push({ x: clamp(P.x, camX + 140, camX + W - 140), y: P.y - 54, s: `${S.name.toUpperCase()} ${PART_NAMES[p.idx].toUpperCase()} · ${n}/4`, c: '#7fe3ff', t: 1.8, sz: 16 });
   sparks(P.x, P.y, '#7fe3ff', 18);
   if (n === 4) { banner = { a: 'NEW SHIP', b: `${S.name} is ready in the Fleet bay`, t: 3 }; run.newShip = S; }
+  chatter('salvage', .8);
 }
 
 function fireWeapons(dt) {
@@ -2367,7 +2484,7 @@ function updEnemy(e, dt) {
   // rescue
   if (e.evac && !e.dead) { // evac beacons stop and wait, but not forever
     if (e.y >= e.ty) { e.y -= SCROLL * dt; e.life -= dt; }
-    if (e.life <= 0) { e.dead = true; run.lost++; texts.push({ x: e.x, y: e.y - 24, s: 'SURVIVOR LOST', c: '#ff5a4f', t: 1.3, sz: 14 });
+    if (e.life <= 0) { e.dead = true; run.lost++; texts.push({ x: e.x, y: e.y - 24, s: 'SURVIVOR LOST', c: '#ff5a4f', t: 1.3, sz: 14 }); chatter('lost', .8);
       if (LV.survivors - run.lost < Math.ceil(LV.survivors / 2)) failObjective('Too many survivors were left behind.');
       return; }
   }
@@ -2376,7 +2493,7 @@ function updEnemy(e, dt) {
     if (near) {
       e.prog += dt / 1.1 * ST.rescue;
       if (e.prog >= 1) {
-        e.dead = true; run.rescued++; save.stats.rescues++; SND.rescue();
+        e.dead = true; run.rescued++; save.stats.rescues++; SND.rescue(); chatter('rescue', .45);
         const v = Math.round((30 + LV.L * 6) * DIFFS[save.diff].stars * TM.stars * ST.rescueStars);
         run.stars += v; run.rescueStars += v;
         texts.push({ x: e.x, y: e.y - 24, s: `SURVIVOR RESCUED +${v}★`, c: '#4cdf8a', t: 1.4, sz: 16 });
@@ -2407,6 +2524,7 @@ function updBoss(e, dt) {
     if (ph !== e.phase) {
       e.phase = ph; e.pats = e.phases[ph]; e.pat = -1; e.rest = 1.2; e.beam = null; eb = []; flash = .4; shake = 12;
       SND.warn(); banner = { a: `PHASE ${ph + 1}`, b: ph === 2 ? 'The Overseer is desperate' : 'The Overseer adapts', t: 2.2, warn: true };
+      if (BOSS_LINES[LV.s].phase) say(BOSS_VOICE[LV.s], BOSS_LINES[LV.s].phase[Math.min(ph, 2) - 1] || BOSS_LINES[LV.s].phase[0], null, { now: true });
       if (ph === 1) spawn({ type: 'hive', x: W / 2, y: -60, counted: false, loyal: true });
     }
   }
@@ -2800,6 +2918,8 @@ function drawEnemy0(e) {
       ctx.fillStyle = '#ff3b2e'; ctx.beginPath(); ctx.arc(0, 0, 7, 0, 7); ctx.fill();
       break; }
     case 'salvage': {
+      if (e.intel != null) { const k = (gameT * 1.3) % 1; ctx.strokeStyle = `rgba(224,123,255,${.9 - k * .9})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, 24 + k * 22, 0, 7); ctx.stroke();
+        ctx.fillStyle = '#e07bff'; ctx.font = '700 10px Orbitron, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('DATA', 0, 36); }
       if (RASTER.salvage) { drawRaster(rasterFor('salvage'), 0, 0); break; }
       const pulse = (gameT * 1.2) % 1;
       ctx.strokeStyle = `rgba(127,227,255,${1 - pulse})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(0, 0, 22 + pulse * 22, 0, 7); ctx.stroke();
@@ -3117,6 +3237,7 @@ function drawHUD() {
     ctx.fillStyle = 'rgba(5,12,24,.7)'; ctx.fillRect(12, ly, 80, 6);
     ctx.fillStyle = P.lasOn > 0 ? '#fff' : '#b48cff'; ctx.fillRect(12, ly, 80 * clamp(c, 0, 1), 6);
   }
+  drawRadio();
 }
 function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect ? ctx.roundRect(x, y, w, h, r) : ctx.rect(x, y, w, h); }
 
@@ -3162,6 +3283,13 @@ function render() {
       if (RASTER.part) drawRaster(RASTER.part, p.x, p.y + bob);
       else gear(p.x, p.y + bob, 10, '#bff3ff', p.t * 2);
       ctx.fillStyle = '#bff3ff'; ctx.font = '700 10px Orbitron, sans-serif'; ctx.textAlign = 'center'; ctx.fillText('PART', p.x, p.y + bob + 32);
+    } else if (p.kind === 'intel') {
+      const bob = Math.sin(p.t * 6) * 2.5;
+      ctx.save(); ctx.translate(p.x, p.y + bob); ctx.rotate(p.t * 1.5);
+      ctx.shadowColor = '#e07bff'; ctx.shadowBlur = 16;
+      ctx.beginPath(); for (let i = 0; i < 6; i++) { const a = i / 6 * 6.283; ctx[i ? 'lineTo' : 'moveTo'](Math.cos(a) * 14, Math.sin(a) * 14); } ctx.closePath();
+      ctx.fillStyle = 'rgba(40,8,52,.95)'; ctx.fill(); ctx.strokeStyle = '#e07bff'; ctx.lineWidth = 3; ctx.stroke(); ctx.shadowBlur = 0;
+      ctx.fillStyle = '#f6d8ff'; ctx.fillRect(-5, -5, 10, 10); ctx.restore();
     } else if (p.kind === 'pw') {
       const d = POWER[p.pw], bob = Math.sin(p.t * 6) * 2.5, pul = 1 + Math.sin(p.t * 9) * .08;
       ctx.globalCompositeOperation = 'lighter'; ctx.globalAlpha = .55;
@@ -3401,9 +3529,12 @@ function finishLevel(success) {
     const prev = r.rk[tier]; if (!prev || RANKS.indexOf(rank.r) > RANKS.indexOf(prev)) { r.rk[tier] = rank.r; rank.best = !!prev; }
     if (rank.r === 'S') save.stats.sRanks = (save.stats.sRanks || 0) + 1;
     if (save.diff === 2) save.stats.vetClears++;
-    if (firstClear && L === NLEVELS - 1) story = { title: 'TRANSMISSION · THE END', lines: STORY.ending };
+    if (firstClear && MISSION_STORY[L]) run.debrief = MISSION_STORY[L].debrief;
+    if (firstClear && LV.major) story = LV.s === SECTORS.length - 1 ? { title: 'TRANSMISSION · THE END', lines: STORY.ending, then: { title: 'EPILOGUE · FIRST FLIGHT', lines: STORY.epilogue } }
+      : { title: STORY.after[LV.s].title, lines: STORY.after[LV.s].lines };
   }
   for (const f of run.found) lines.push([`🔩 Part recovered: ${f}`, null]);
+  for (const f of run.intelFound || []) lines.push([`💾 Data core: ${f}`, null]);
   if (run.newShip) lines.push([`🛩️ New ship assembled: ${run.newShip.name}`, null]);
   save.stars += total; save.total += total;
   persist();
@@ -3421,13 +3552,14 @@ function finishLevel(success) {
     `<div class="total"><span>Total</span><span>★ ${fmt(total)}</span></div>`;
   $('resHangar').textContent = run.newShip ? 'Fleet' : 'Hangar';
   { let k = 0; newly.forEach((n, i) => { if (n) setTimeout(() => SND.medal(k), 1300 + k++ * 260); }); }
-  $('resQuip').textContent = run.newShip ? `I have finished assembling the ${run.newShip.name}. Select it in the Fleet bay. I would test it myself, but, well.` : unlockedTier ? `Every medal. I have prepared ${TIERS[unlockedTier].name}: same mission, nastier Legion, better pay.` : pick(success ? QUIPS.win : QUIPS.lose);
-  if (run.objFail) $('resQuip').textContent = `${run.objFail} We regroup and go again. I will keep the kettle on.`;
+  setQuip($('resQuip'), 'J', run.newShip ? `I have finished assembling the ${run.newShip.name}. Select it in the Fleet bay. I would test it myself, but, well.` : unlockedTier ? `Every medal. I have prepared ${TIERS[unlockedTier].name}: same mission, nastier Legion, better pay.` : pick(success ? QUIPS.win : QUIPS.lose));
+  if (run.debrief && !run.newShip && !unlockedTier) setQuip($('resQuip'), run.debrief[0], run.debrief[1]);
+  if (run.objFail) setQuip($('resQuip'), 'J', `${run.objFail} We regroup and go again. I will keep the kettle on.`);
   lastLevel = LV;
   const nextL = !LV.rush && !tier && success && L + 1 < NLEVELS ? L + 1 : null;
   $('resNext').textContent = unlockedTier ? `Fly ${TIERS[unlockedTier].name}` : nextL != null ? 'Next mission' : 'Mission board';
   $('resNext').onclick = () => {
-    if (story) { showStory(story.title, story.lines, () => go('map')); return; }
+    if (story) { showStory(story.title, story.lines, () => story.then ? showStory(story.then.title, story.then.lines, () => go('map')) : go('map')); return; }
     if (unlockedTier) startLevel(L, unlockedTier);
     else if (nextL != null) startLevel(nextL); else go('map');
   };
@@ -3437,7 +3569,15 @@ function finishLevel(success) {
 
 /* ------------------------------ UI ------------------------------ */
 const pick = a => a[Math.floor(Math.random() * a.length)];
-const SCREENS = ['menu', 'map', 'hangar', 'fleet', 'ach', 'howto', 'story', 'results', 'pause'];
+const SCREENS = ['menu', 'map', 'hangar', 'fleet', 'ach', 'howto', 'story', 'results', 'pause', 'logs'];
+// every quip line names its speaker (CSS reads data-who)
+function setQuip(el, who, text) { const C = CAST[who] || CAST.J; el.textContent = text; el.dataset.who = C.n; el.style.setProperty('--qc', C.c); }
+function castQuip(el, own, castPool) {
+  const pool = castPool.filter(l => castJoined2(l[0]));
+  if (pool.length && Math.random() < .5) { const l = pick(pool); setQuip(el, l[0], l[1]); } else setQuip(el, 'J', pick(own));
+}
+// outside a mission: who has joined the hangar so far
+const castJoined2 = k => ({ M: isDone(0), P: isDone(2), W: isDone(10), D: isDone(21) })[k] ?? k === 'J';
 function showScreen(id) { SCREENS.forEach(s => $(s).classList.toggle('hidden', s !== id)); }
 function refreshStars() { $('menuStars').textContent = fmt(save.stars); document.querySelectorAll('.starsNow').forEach(e => e.textContent = fmt(save.stars)); }
 
@@ -3445,11 +3585,12 @@ function go(id) {
   if (id === 'briefing') { showStory('INCOMING TRANSMISSION', STORY.intro, () => go('menu')); return; }
   state = id; curSector = id === 'map' ? curSector : curSector;
   refreshStars();
-  if (['menu', 'map', 'hangar', 'fleet', 'ach', 'howto'].includes(id)) { SND.duck(false); SND.ambience(null); SND.music('menu', 1776, 0); }
-  if (id === 'menu') $('menuQuip').textContent = pick(QUIPS.menu);
+  if (['menu', 'map', 'hangar', 'fleet', 'ach', 'howto', 'logs'].includes(id)) { SND.duck(false); SND.ambience(null); SND.music('menu', 1776, 0); }
+  if (id === 'menu') castQuip($('menuQuip'), QUIPS.menu, CAST_QUIPS.menu);
   if (id === 'map') buildMap();
-  if (id === 'hangar') { $('hangarQuip').textContent = pick(QUIPS.hangar); buildHangar(); }
-  if (id === 'fleet') { const n = SHIPS.filter(x => shipOwned(x.id)).length; $('fleetQuip').textContent = `${n} of ${SHIPS.length} ships assembled. Parts turn up in blue salvage crates on the missions listed.`; buildFleetScreen(); }
+  if (id === 'hangar') { castQuip($('hangarQuip'), QUIPS.hangar, CAST_QUIPS.hangar); buildHangar(); }
+  if (id === 'logs') buildLogs();
+  if (id === 'fleet') { const n = SHIPS.filter(x => shipOwned(x.id)).length; setQuip($('fleetQuip'), 'J', `${n} of ${SHIPS.length} ships assembled. Parts turn up in blue salvage crates on the missions listed.`); buildFleetScreen(); }
   if (id === 'ach') buildAch();
   if (id === 'howto') buildHowto();
   showScreen(id);
@@ -3463,12 +3604,41 @@ function showStory(title, lines, done) {
   state = 'story'; showScreen('story'); nextStory();
 }
 function nextStory() {
+  $('storyNext').blur();
+  if (!storyQ) return;
   if (!storyQ.lines.length) { const d = storyQ.done; storyQ = null; d(); return; }
-  const [who, txt] = storyQ.lines.shift();
-  $('storyBody').innerHTML = `<div class="who">${who}</div>${txt}`;
+  const [who, txt, name] = storyQ.lines.shift(), C = CAST[who] || CAST.J;
+  const pt = C.img ? `<img src="${C.img}" alt="">` : C.fx === 'wave' ? '<span class="wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>' : '<span class="static">?</span>';
+  $('storyBody').innerHTML = `<div class="spk" style="--sc:${C.c}"><div class="pt ${C.boss ? 'bossp' : ''}">${pt}</div><div class="who">${name || C.n}</div></div><div class="say">${txt}</div>`;
   $('storyNext').textContent = storyQ.lines.length ? 'Continue' : 'Understood';
+  SND.radio && SND.radio(C.boss);
 }
 $('storyNext').addEventListener('click', nextStory);
+$('storySkip').addEventListener('click', () => { if (storyQ) { storyQ.lines = []; nextStory(); } });
+
+// Transmissions: replay every scene you have unlocked, every mission's radio log, and the Legion data cores
+function buildLogs() {
+  const sec = s => `${s + 1}-${LEVELS_PER}`;
+  const scenes = [['Incoming transmission', 'The beginning', STORY.intro, true]];
+  for (let s = 0; s < SECTORS.length; s++) {
+    if (s > 0) scenes.push([`Briefing · Sector ${s + 1}`, SECTORS[s].name, STORY.s[s], !!save.seen['s' + s] || isDone(s * LEVELS_PER), `Reach sector ${s + 1}`]);
+    if (s < SECTORS.length - 1) scenes.push([STORY.after[s].title.replace('TRANSMISSION · ', '').toLowerCase().replace(/(^|\s)\S/g, m => m.toUpperCase()), `After the ${SECTORS[s].boss.toLowerCase().replace(/\b\w/g, m => m.toUpperCase())}`, STORY.after[s].lines, isDone(s * LEVELS_PER + LEVELS_PER - 1), `Clear mission ${sec(s)}`]);
+  }
+  scenes.push(['The End', 'After the Overseer', STORY.ending, isDone(NLEVELS - 1), `Clear mission ${sec(SECTORS.length - 1)}`]);
+  scenes.push(['Epilogue · First Flight', 'One week later', STORY.epilogue, isDone(NLEVELS - 1), `Clear mission ${sec(SECTORS.length - 1)}`]);
+  const radioLogs = MISSION_STORY.map((m, L) => [`Radio log · ${Math.floor(L / LEVELS_PER) + 1}-${L % LEVELS_PER + 1}`, SECTORS[Math.floor(L / LEVELS_PER)].name,
+    m.radio.map(r => [r[1], r[2], r[3]]).concat([m.debrief]), isDone(L), 'Clear the mission']);
+  const intel = INTEL.map((g, i) => { const L = INTEL_AT[i]; return [save.intel[i] ? g.t : `Data core ${i + 1} · encrypted`, `Data core ${i + 1}`, g.lines, !!save.intel[i], `Hidden in a purple-ringed crate on mission ${Math.floor(L / LEVELS_PER) + 1}-${L % LEVELS_PER + 1}`]; });
+  let all = [];
+  const sect = (h, sub, list) => {
+    let html = `<div class="sector"><h3>${h}</h3><div class="sub">${sub}</div><div class="logs">`;
+    list.forEach(e => { const i = all.push(e) - 1; html += e[3] ? `<button class="logb" data-i="${i}"><b>${e[0]}</b><small>${e[1]}</small></button>` : `<div class="logb locked"><b>🔒 ${e[0]}</b><small>${e[4]}</small></div>`; });
+    return html + '</div></div>';
+  };
+  const nI = Object.keys(save.intel).length;
+  $('logList').innerHTML = sect('STORY', 'Every scene so far', scenes) + sect(`LEGION DATA CORES · ${nI}/${INTEL.length}`, 'Shoot open the purple-ringed crates and grab the core', intel) + sect('FLIGHT RECORDINGS', 'Everything said on the radio, mission by mission', radioLogs);
+  $('logList').querySelectorAll('button.logb').forEach(b => b.onclick = () => { const e = all[+b.dataset.i]; showStory(e[0].toUpperCase(), e[2], () => go('logs')); });
+}
 
 function unlocked(L) { return L === 0 || !!save.lv[L - 1]?.done || !!save.lv[L]?.done; }
 function startLevel(L, tier = 0) {
@@ -3499,7 +3669,7 @@ function buildMap() {
       const L = s * LEVELS_PER + i, r = save.lv[L], ok = unlocked(L), bossL = i === LEVELS_PER - 1, top = ok ? topTier(L) : 0;
       const rows = TIERS.map((_, k) => `<div class="pips ${tierOpen(L, k) ? '' : 'dim'}">${Array.from({ length: tierMedalCount(k) }, (_, m) => `<i class="pip ${r?.t[k][m] ? 'on' : ''}"></i>`).join('')}</div>`).join('');
       const salv = TIERS.some((_, k) => { const pa = partAt(L, k); return pa && !hasPart(pa.ship, pa.idx); });
-      html += `<div class="lvl ${ok ? '' : 'locked'} ${r?.done ? 'done' : ''} ${bossL ? 'boss' : ''}" data-l="${ok ? L : ''}">${salv ? '<i class="pd" title="Ship part to find">🔩</i>' : ''}${bestRank(L) ? `<i class="rkb" style="--rc:${RANK_COL[bestRank(L)]}" title="Best rank">${bestRank(L)}</i>` : ''}<b>${s + 1}-${i + 1}</b><small class="mk">${bossL ? 'BOSS · ' : MODE_OF[L] ? `<em style="color:${MODES[MODE_OF[L]].c}">${MODES[MODE_OF[L]].name}</em> · ` : ''}${TIERS[top].name}</small><div class="tiers">${rows}</div></div>`;
+      html += `<div class="lvl ${ok ? '' : 'locked'} ${r?.done ? 'done' : ''} ${bossL ? 'boss' : ''}" data-l="${ok ? L : ''}">${salv ? '<i class="pd" title="Ship part to find">🔩</i>' : ''}${INTEL_AT.includes(L) && !save.intel[INTEL_AT.indexOf(L)] ? '<i class="pd pi" title="Legion data core to find">💾</i>' : ''}${bestRank(L) ? `<i class="rkb" style="--rc:${RANK_COL[bestRank(L)]}" title="Best rank">${bestRank(L)}</i>` : ''}<b>${s + 1}-${i + 1}</b><small class="mk">${bossL ? 'BOSS · ' : MODE_OF[L] ? `<em style="color:${MODES[MODE_OF[L]].c}">${MODES[MODE_OF[L]].name}</em> · ` : ''}${TIERS[top].name}</small><div class="tiers">${rows}</div></div>`;
     }
     html += '</div>';
     const rOk = !!save.lv[s * LEVELS_PER + LEVELS_PER - 1]?.done;
@@ -3563,7 +3733,7 @@ function buildFleetScreen() {
     if (!shipOwned(b.dataset.ship)) return;
     save.ship = b.dataset.ship; persist();
     const top = $('fleetList').scrollTop; buildFleetScreen(); $('fleetList').scrollTop = top;
-    $('fleetQuip').textContent = `${shipById(save.ship).name} prepped and fuelled. Your upgrades carry over.`;
+    setQuip($('fleetQuip'), 'J', `${shipById(save.ship).name} prepped and fuelled. Your upgrades carry over.`);
   });
 }
 
@@ -3595,8 +3765,8 @@ function buildHangar() {
       setTimeout(() => { toast('🔒 CLASSIFIED BAY UNLOCKED — Jarvis has something in the back room.'); SND.part(); }, 400);
     }
     const top = $('upgList').scrollTop; buildHangar(); $('upgList').scrollTop = top; refreshStars();
-    $('hangarQuip').textContent = u.secret ? `${u.name} fitted. ${pick(['I am not supposed to have that.', 'Do not tell the requisitions office.', 'That one is technically experimental.', 'Well. That is a lot of aircraft.'])}`
-      : `${u.name} upgraded. ${pick(['Lovely.', 'She purrs.', 'Calibrated.', 'Installed, tested, polished.', 'I am rather proud of that one.'])}`;
+    setQuip($('hangarQuip'), 'J', u.secret ? `${u.name} fitted. ${pick(['I am not supposed to have that.', 'Do not tell the requisitions office.', 'That one is technically experimental.', 'Well. That is a lot of aircraft.'])}`
+      : `${u.name} upgraded. ${pick(['Lovely.', 'She purrs.', 'Calibrated.', 'Installed, tested, polished.', 'I am rather proud of that one.'])}`);
   });
 }
 
@@ -3668,6 +3838,7 @@ let inputMode = matchMedia('(pointer: coarse)').matches ? 'touch' : 'key';
 const KEY_EMP = ['Space', 'KeyB'], KEY_ABIL = ['KeyE', 'KeyQ', 'ShiftLeft', 'ShiftRight'];
 addEventListener('keydown', e => {
   keys[e.code] = true; inputMode = 'key';
+  if (state === 'story' && (e.code === 'Enter' || e.code === 'Space') && !e.repeat) { e.preventDefault(); nextStory(); return; }
   if (KEY_EMP.includes(e.code)) { e.preventDefault(); if (!e.repeat) useBomb(); } // a held key must not dump every EMP
   if (KEY_ABIL.includes(e.code) && !e.repeat) useAbility();
   if (e.code === 'Escape' || e.code === 'KeyP') { if (state === 'play') pauseGame(); else if (state === 'pause') $('pResume').click(); }

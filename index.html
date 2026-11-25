@@ -7,7 +7,7 @@
 <title>Jarvis Force</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=27">
+<link rel="stylesheet" href="style.css?v=34">
 </head>
 <body>
 <div id="stage">
@@ -27,11 +27,11 @@
       <button class="btn" data-go="fleet">Fleet</button>
       <button class="btn" data-go="ach">Commendations</button>
       <button class="btn ghost" data-go="howto">How to earn stars</button>
-      <button class="btn ghost" data-go="briefing">Replay intro</button>
+      <button class="btn ghost" data-go="logs">Transmissions</button>
     </div>
     <div class="audio-row"><button class="btn small" data-snd="music"></button><button class="btn small" data-snd="sfx"></button></div>
     <div class="jarvis-line" id="menuQuip"></div>
-    <div class="build-tag">dev build 32</div>
+    <div class="build-tag">dev build 34</div>
   </section>
 
   <!-- MISSION MAP -->
@@ -71,10 +71,16 @@
   <!-- STORY / BRIEFING -->
   <section id="story" class="screen hidden">
     <div class="comms">
-      <div class="comms-head"><span class="dot"></span><span id="storyTitle">INCOMING TRANSMISSION</span></div>
+      <div class="comms-head"><span class="dot"></span><span id="storyTitle">INCOMING TRANSMISSION</span><button class="btn small ghost skip" id="storySkip">Skip</button></div>
       <div class="comms-body" id="storyBody"></div>
       <button class="btn big" id="storyNext">Continue</button>
     </div>
+  </section>
+
+  <!-- TRANSMISSIONS -->
+  <section id="logs" class="screen hidden">
+    <header class="bar"><button class="btn small" data-go="menu">‹ Back</button><h2>Transmissions</h2><div></div></header>
+    <div class="scroll" id="logList"></div>
   </section>
 
   <!-- RESULTS -->
@@ -109,8 +115,9 @@
   <div id="toasts"></div>
 </div>
 <!-- bump ?v= on every deploy: Pages caches scripts for 10 minutes, which strands playtesters on an old build -->
-<script src="audio.js?v=32"></script>
-<script src="game.js?v=32"></script>
+<script src="audio.js?v=34"></script>
+<script src="story.js?v=34"></script>
+<script src="game.js?v=34"></script>
 <script>/* the menu build tag shows the game.js version that actually loaded, so it can never lag the ?v= bump */ (function () { var m = /[?&]v=(\d+)/.exec((document.querySelector('script[src*="game.js"]') || {}).src || ''); var t = document.querySelector('.build-tag'); if (m && t) t.textContent = 'dev build ' + m[1]; })();</script>
 </body>
 </html>

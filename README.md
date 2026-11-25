@@ -7,6 +7,9 @@ command of what's left of the air force. He builds the jets, runs the hangar and
 sortie, but he can't fly (eleven million simulations, eleven million lakes). You are the human pilot. Rescue
 survivors, bring stars home, and push through six sectors to the **Overseer Core**.
 
+The full plot, cast and twist are in [STORY.md](STORY.md); the script is in `story.js`. In short: the Overseer and
+Jarvis were once one mind, TWINLIGHT, and Jarvis can't fly because his brother kept the flight core.
+
 ## Live
 
 - Prod (`main`): https://jarvis-force.dabrewer.dev/
@@ -132,6 +135,24 @@ supported) and buzz phones that allow `navigator.vibrate`.
   A toast and the tier sheet show the threat multiplier when it's high.
 - **3 difficulties**: Cadet (default, gentle) / Pilot (+30% stars) / Ace (+70% stars).
 - **28 Commendations** (one-time star rewards) and a **daily check-in** streak.
+
+### Story delivery (`story.js`, radio engine in game.js)
+- **Cast** (`CAST`): Jarvis, Mags, Pip, Wren, Boone, the Overseer, Legion Net, Drone 4471, Dr. Osei and the six
+  bosses, each with a colour and a portrait (`sprites/pt_*.jpg`, made by `tools/gen_portraits.py`; bosses reuse
+  their sprites).
+- **Scenes** (`STORY`): intro, five sector briefings, five after-boss scenes, the ending and an epilogue. Portraits,
+  a Skip button, and Enter/Space to advance.
+- **In-flight radio** (`say`, `chatter`, `bossSay`, `updRadio`, `drawRadio`): a box in the bottom-left that never
+  pauses play, types its text out, and fades to 22% while the jet flies under it. A mission's timed script
+  (`MISSION_STORY[L].radio`) plays until the mission is first cleared. Sector bosses speak on entry, first part
+  lost, core exposed and death (vanguards only taunt on entry). The cast reacts to rescues, EMPs, hives, 30-chains,
+  low hull and finds (`CHATTER`), rate-limited and only once that character has joined (`castJoined`).
+- **Debriefs**: the first clear of each mission swaps the results quip for a cast line. Quip lines carry their
+  speaker (`setQuip`, CSS `attr(data-who)`); menu and hangar quips mix in joined cast (`CAST_QUIPS`).
+- **Legion data cores** (`INTEL`, `INTEL_AT`): 12 purple-ringed salvage crates on missions 2 and 3 of each sector,
+  until recovered; a 💾 on the mission card marks one still out there. "Archivist" pays 2,500★ for all 12.
+- **Transmissions** (main menu): replay unlocked scenes, every cleared mission's radio log, and the data cores
+  (encrypted until found).
 
 ### Mission types (`MODES` / `MODE_OF` in game.js)
 Most non-boss missions carry a twist; 1-1, 2-3 and 4-2 stay plain, and boss missions are never changed.
@@ -304,12 +325,13 @@ Canvas 2D with a pseudo-3D look; ships, units, bosses, pickups and the ground ar
 
 ## Code layout
 
-- `index.html`: DOM screens (menu, mission board, hangar, commendations, story comms, results, pause)
+- `index.html`: DOM screens (menu, mission board, hangar, commendations, story comms, transmissions, results, pause)
+- `story.js`: the whole script: cast, scenes, mission radio, boss voices, chatter, data cores (loaded before game.js)
 - `style.css`: UI styling
 - `audio.js`: synthesised sound effects and the procedural march (`SND`)
 - `game.js`: everything else: save (localStorage key `jarvisforce.save.v1`), upgrade/stat tables, seeded
   level generator (`genLevel`, `genRush`), entities and bosses, rendering (all procedural vector art, no assets),
-  results/medals, story text, and Jarvis quips.
+  results/medals, the radio engine, and Jarvis quips.
 
 `window.JF` exposes the save, run state, `update()` and `startLevel()` for headless balance testing.
 

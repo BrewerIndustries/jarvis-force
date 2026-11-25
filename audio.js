@@ -479,6 +479,8 @@ const SND = (() => {
     medal(i = 0) { tone(1047 * Math.pow(2, Math.min(i, 8) / 12), .18, { type: 'triangle', gain: .06, delay: .02 }); tone(2093 * Math.pow(2, Math.min(i, 8) / 12), .25, { type: 'sine', gain: .03, delay: .06 }); },
     // UI and results
     click() { if (throttle('clk', 40)) tone(720, .045, { type: 'square', gain: .03 }); },
+    // comms: a burst of static and a two-note squelch (lower and rougher when a boss is talking)
+    radio(boss) { if (!throttle('rad', 120)) return; noise(.08, { gain: .045, filter: 'bandpass', freq: boss ? 900 : 2300, q: 1.1 }); tone(boss ? 330 : 1320, .045, { type: 'square', gain: .02, delay: .07 }); tone(boss ? 247 : 1760, .06, { type: 'square', gain: .018, delay: .12 }); },
     buy() { tone(1319, .08, { type: 'square', gain: .04 }); tone(1760, .2, { type: 'square', gain: .04, delay: .07 }); },
     // boss entrance: a timpani roll swelling into a low brass chord (minor for a sector commander)
     bossIntro(major = true) {
